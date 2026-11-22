@@ -38,6 +38,13 @@
   .ln.alt { background: transparent; color: var(--btn); box-shadow: inset 0 0 0 1.5px var(--btn); }
   .h { color: var(--hint); font-size: 12.5px; }
   .sube { color: var(--verde); font-size: 12.5px; }
+  .tl { display: block; position: relative; padding: 2px 0 2px 20px; margin: 4px 0 2px; }
+  .tl::before { content: ""; position: absolute; left: 5px; top: 10px; bottom: 10px; width: 2px; background: var(--btn); }
+  .tl .pt { position: relative; display: block; }
+  .tl .pt::before { content: ""; position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; }
+  .tl .s::before { background: #2e9e6a; } .tl .b::before { background: #d9534f; }
+  .tl a { color: var(--txt); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .tl .medio { display: block; color: var(--hint); font-size: 12.5px; padding: 1px 0; }
   .semana { background: var(--sec); border-radius: 12px; padding: 10px; margin: 4px 4px 8px; text-align: center; }
   .semana b { font-size: 16px; }
   .aviso { color: var(--hint); font-size: 13px; text-align: center; padding: 18px 10px; }
@@ -213,23 +220,31 @@ function origenesDelDia(d) {
   return lista;
 }
 
+function linkParada(L, s, extra) {
+  const p = L.pts[s.i];
+  const url = "https://www.google.com/maps/search/?api=1&query=" + p[0].toFixed(6) + "," + p[1].toFixed(6);
+  return `<a data-url="${url}">${esc(s.n || extra)}</a>`;
+}
+
 function htmlOpcion(o) {
-  const t0 = o.tramos[0], dosColes = o.tramos.length > 1;
+  const dosColes = o.tramos.length > 1;
   let h = `<div class="op"><div class="cab"><b>≈ ${minutos(o)} min · ${dosColes ? "2 colectivos" : "directo"}</b>`
         + `<span class="precio">≈ ${plata(costo(o))}</span></div>`;
   o.tramos.forEach((t, n) => {
     const L = LINEAS[t.li], sube = paradaCerca(L, t.ia), baja = paradaCerca(L, t.ib), np = paradasEntre(L, t.ia, t.ib);
-    if (n === 0) h += `<div class="paso"><span class="ic">🚶</span><span>${Math.round(o.pies[0])} m hasta la parada`
-                    + `${sube && sube.n ? ` <span class="sube">${esc(sube.n)}</span>` : ""}</span></div>`;
+    if (n === 0) h += `<div class="paso"><span class="ic">🚶</span><span>${Math.round(o.pies[0])} m hasta la parada</span></div>`;
     else if (o.combina > 60) h += `<div class="paso"><span class="ic">🚶</span><span class="h">${Math.round(o.combina)} m para combinar</span></div>`;
     let lineas = `<span class="ln">${esc(L.ref)}</span>`;
     if (n === 0) o.alt.forEach(a => lineas += `<span class="ln alt">${esc(a)}</span>`);
-    const det = [L.ramal && n === 0 && o.alt.length ? "" : L.ramal, L.hasta ? "hacia " + L.hasta : "", fmtKm(t.km),
-                 np ? np + " paradas" : ""].filter(Boolean).map(esc).join(" · ");
-    h += `<div class="paso"><span class="ic">🚌</span><span>${lineas} <span class="h">${det}</span>`
+    const det = [n === 0 && o.alt.length ? "" : L.ramal, L.hasta ? "hacia " + L.hasta : ""].filter(Boolean).map(esc).join(" · ");
+    const medio = [np ? np + " paradas" : "", fmtKm(t.km)].filter(Boolean).join(" · ");
+    h += `<div class="paso"><span class="ic">🚌</span><span style="flex:1">${lineas} <span class="h">${det}</span>`
        + (n === 1 ? ` <span class="sube">−50% Red SUBE</span>` : "")
-       + (n === 1 && sube && sube.n ? `<br><span class="h">subís en ${esc(sube.n)}</span>` : "")
-       + (baja && baja.n ? `<br><span class="h">bajás en ${esc(baja.n)}</span>` : "") + `</span></div>`;
+       + `<span class="tl">`
+       + (sube ? `<span class="pt s">${linkParada(L, sube, "Parada de subida")}</span>` : "")
+       + `<span class="medio">${medio}</span>`
+       + (baja ? `<span class="pt b">${linkParada(L, baja, "Parada de bajada")}</span>` : "")
+       + `</span></span></div>`;
   });
   h += `<div class="paso"><span class="ic">🚶</span><span>${Math.round(o.pies[1])} m hasta la escuela</span></div></div>`;
   return h;
@@ -284,6 +299,9 @@ function pintar() {
   app.innerHTML = h;
   app.querySelectorAll("[data-dia]").forEach(b => b.onclick = () => { DIA = +b.dataset.dia; ORIGEN = null; pintar(); });
   app.querySelectorAll("[data-origen]").forEach(b => b.onclick = () => { ORIGEN = b.dataset.origen; pintar(); });
+  app.querySelectorAll("a[data-url]").forEach(a => a.onclick = () => {      // parada → Google Maps
+    if (tg && tg.openLink) tg.openLink(a.dataset.url); else window.open(a.dataset.url, "_blank");
+  });
 }
 
 async function pedirCasa() {
