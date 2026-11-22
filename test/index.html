@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Mis horarios (prueba)</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --txt: var(--tg-theme-text-color, #1c1c1e);
+    --hint: var(--tg-theme-hint-color, #8e8e93);
+    --sec: var(--tg-theme-secondary-bg-color, #f2f2f7);
+    --btn: var(--tg-theme-button-color, #2481cc);
+    --btntxt: var(--tg-theme-button-text-color, #ffffff);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--txt);
+    font: 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { padding: 10px 8px 90px; max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 17px; margin: 2px 4px 4px; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--hint); margin: 14px 4px 6px; text-transform: uppercase; letter-spacing: .3px; }
+  p.ayuda { margin: 0 4px 8px; color: var(--hint); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 4px 10px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 16px; padding: 6px 10px;
+    font-size: 13px; color: #fff; cursor: pointer; opacity: .55; }
+  .chip.activa { opacity: 1; box-shadow: 0 0 0 2px var(--txt); }
+  .chip .x { font-weight: 700; padding-left: 2px; }
+  .chip.mas { background: var(--sec); color: var(--txt); opacity: 1; }
+  .grilla { display: grid; grid-template-columns: 40px repeat(6, 1fr); gap: 2px;
+    touch-action: none; user-select: none; -webkit-user-select: none; }
+  .cab { text-align: center; font-weight: 600; font-size: 12px; padding: 4px 0;
+    position: sticky; top: 0; background: var(--bg); z-index: 1; }
+  .hora { font-size: 10px; color: var(--hint); text-align: right; padding-right: 4px; height: 17px; line-height: 17px; }
+  .hora.media { visibility: hidden; }
+  .c { height: 17px; background: var(--sec); border-radius: 3px; }
+  .c.hora-entera { box-shadow: inset 0 1px 0 rgba(128,128,128,.25); }
+  .barra { display: flex; gap: 8px; margin: 12px 4px 0; align-items: center; }
+  .barra button { border: 0; border-radius: 8px; padding: 9px 12px; font-size: 14px; background: var(--sec); color: var(--txt); }
+  .barra .total { margin-left: auto; color: var(--hint); font-size: 13px; }
+  .casa { margin: 0 4px; display: flex; gap: 8px; align-items: center; background: var(--sec); border-radius: 10px; padding: 8px 10px; }
+  .casa input { flex: 1; border: 0; background: transparent; color: var(--txt); font-size: 14px; outline: none; }
+  #guardarWeb { display: none; width: 100%; margin-top: 12px; padding: 12px; border: 0;
+    border-radius: 10px; background: var(--btn); color: var(--btntxt); font-size: 15px; font-weight: 600; }
+  /* buscador de escuelas */
+  #capa { position: fixed; inset: 0; background: var(--bg); z-index: 10; display: none; flex-direction: column; padding: 10px 8px; }
+  #capa.abierta { display: flex; }
+  #capa .top { display: flex; gap: 8px; margin-bottom: 8px; }
+  #capa input { flex: 1; border: 0; border-radius: 10px; padding: 10px 12px; background: var(--sec); color: var(--txt); font-size: 15px; outline: none; }
+  #capa .cerrar { border: 0; background: none; color: var(--btn); font-size: 15px; }
+  #lista { overflow-y: auto; flex: 1; }
+  .op { padding: 10px 6px; border-bottom: 1px solid var(--sec); cursor: pointer; }
+  .op small { color: var(--hint); display: block; }
+  .op.otra { color: var(--btn); }
+</style>
+</head>
+<body>
+  <h1>🗓️ Mis horarios</h1>
+  <p class="ayuda">Elegí una escuela y pintá las horas en que trabajás ahí. Tocá o arrastrá el dedo.</p>
+
+  <h2>1 · Escuela</h2>
+  <div class="chips" id="chips"></div>
+
+  <div class="grilla" id="grilla"></div>
+  <div class="barra">
+    <button id="borrar">🧹 Borrar todo</button>
+    <span class="total" id="total"></span>
+  </div>
+
+  <h2>2 · Tu casa</h2>
+  <div class="casa">🏠 <input id="casa" maxlength="120" placeholder="Calle y número, localidad"></div>
+  <p class="ayuda" style="margin-top:6px">Se usa para calcular cuánto tardás desde tu casa. Queda guardada solo en la planilla del bot.</p>
+
+  <button id="guardarWeb">Guardar</button>
+
+  <div id="capa">
+    <div class="top"><input id="buscar" placeholder="Número o nombre (ej: secundaria 34)" autocomplete="off"><button class="cerrar" id="cerrarCapa">Cerrar</button></div>
+    <div id="lista"></div>
+  </div>
+
+<script>
+  // Grilla: 6 días (lun a sáb) × 32 bloques de 30 min (de 7:00 a 23:00) = 192 casillas.
+  // Cada casilla guarda un dígito: 0 libre, 1..8 = escuela de la lista, 9 = ocupado sin escuela (datos viejos).
+  const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const BLOQUES = 32, INICIO = 7 * 60, MAX_ESC = 8;
+  const COLORES = ['#3a7bd5', '#c7792b', '#2e9e6a', '#9b59b6', '#d64545', '#1aa3a3', '#b8860b', '#e0559a'];
+  const SIN_ESC = '#7d8790';
+  const tg = window.Telegram && Telegram.WebApp;
+  let escuelas = [];          // [{c: código ABC o '', n: nombre}]
+  let g = new Array(192).fill(0);
+  let activa = 1;             // escuela con la que se pinta (1..8)
+  let catalogo = [];
+
+  const idx = (d, i) => d * BLOQUES + i;
+  function hhmm(min) { return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`; }
+
+  // ── cargar lo que ya tenía (parámetro d = JSON en base64 url; o = formato viejo en hex)
+  function desdeB64(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(s); const bytes = Uint8Array.from(bin, ch => ch.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+  function cargar() {
+    const q = new URLSearchParams(location.search);
+    try {
+      if (q.get('d')) {
+        const x = JSON.parse(desdeB64(q.get('d')));
+        escuelas = (x.e || []).slice(0, MAX_ESC);
+        if (/^[0-9]{192}$/.test(x.g || '')) g = x.g.split('').map(Number);
+        document.getElementById('casa').value = x.h || '';
+        return;
+      }
+    } catch (err) { /* dato roto: arranca vacío */ }
+    const hex = q.get('o');
+    if (/^[0-9a-f]{48}$/i.test(hex || '')) {
+      for (let d = 0; d < 6; d++) {
+        const bits = parseInt(hex.substr(d * 8, 8), 16);
+        for (let i = 0; i < BLOQUES; i++) if ((bits >>> (31 - i)) & 1) g[idx(d, i)] = 9;
+      }
+    }
+  }
+
+  // ── chips de escuelas
+  function color(v) { return v === 9 ? SIN_ESC : COLORES[v - 1]; }
+  function dibujarChips() {
+    const cont = document.getElementById('chips');
+    cont.innerHTML = '';
+    escuelas.forEach((e, k) => {
+      const b = document.createElement('button');
+      b.className = 'chip' + (activa === k + 1 ? ' activa' : '');
+      b.style.background = COLORES[k];
+      b.innerHTML = `<span>${esc(e.n)}</span><span class="x" title="Quitar">×</span>`;
+      b.onclick = ev => {
+        if (ev.target.classList.contains('x')) return quitar(k);
+        activa = k + 1; dibujarChips();
+      };
+      cont.appendChild(b);
+    });
+    if (g.includes(9)) {
+      const b = document.createElement('button');
+      b.className = 'chip' + (activa === 9 ? ' activa' : '');
+      b.style.background = SIN_ESC;
+      b.textContent = 'Sin escuela';
+      b.onclick = () => { activa = 9; dibujarChips(); };
+      cont.appendChild(b);
+    }
+    if (escuelas.length < MAX_ESC) {
+      const m = document.createElement('button');
+      m.className = 'chip mas';
+      m.textContent = '＋ Agregar escuela';
+      m.onclick = abrirBuscador;
+      cont.appendChild(m);
+    }
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+
+  function quitar(k) {
+    const nombre = escuelas[k].n;
+    if (!confirm(`¿Quitar ${nombre}? Se borran también sus horas pintadas.`)) return;
+    escuelas.splice(k, 1);
+    g = g.map(v => v === k + 1 ? 0 : (v > k + 1 && v !== 9 ? v - 1 : v));
+    if (activa > escuelas.length && activa !== 9) activa = Math.max(1, escuelas.length);
+    dibujarChips(); pintar();
+  }
+
+  // ── buscador
+  function norm(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+  function abrirBuscador() {
+    document.getElementById('capa').classList.add('abierta');
+    const i = document.getElementById('buscar'); i.value = ''; filtrar(); i.focus();
+  }
+  function cerrarBuscador() { document.getElementById('capa').classList.remove('abierta'); }
+  function agregar(c, n) {
+    if (escuelas.some(e => e.c && e.c === c)) { cerrarBuscador(); return; }
+    escuelas.push({ c, n: n.slice(0, 60) });
+    activa = escuelas.length;
+    cerrarBuscador(); dibujarChips();
+  }
+  function filtrar() {
+    const t = norm(document.getElementById('buscar').value.trim());
+    const lista = document.getElementById('lista');
+    lista.innerHTML = '';
+    const palabras = t.split(/\s+/).filter(Boolean);
+    const res = !palabras.length ? [] : catalogo.filter(([c, n, loc]) => {
+      const texto = norm(n + ' ' + loc + ' ' + n.replace('N° ', ''));
+      return palabras.every(p => /^\d+$/.test(p) ? new RegExp('n° ' + p + '\\b').test(norm(n)) : texto.includes(p));
+    }).slice(0, 40);
+    res.forEach(([c, n, loc]) => {
+      const d = document.createElement('div');
+      d.className = 'op';
+      d.innerHTML = `${esc(n)}<small>${esc(loc || 'La Matanza')}</small>`;
+      d.onclick = () => agregar(c, loc ? `${n} · ${loc}` : n);
+      lista.appendChild(d);
+    });
+    const otra = document.createElement('div');
+    otra.className = 'op otra';
+    otra.textContent = palabras.length ? `＋ Usar "${document.getElementById('buscar').value.trim()}" (otra escuela u otro distrito)`
+                                       : 'Escribí el número o el nombre. Si es de otro distrito, escribí el nombre y la dirección.';
+    if (palabras.length) otra.onclick = () => agregar('', document.getElementById('buscar').value.trim());
+    lista.appendChild(otra);
+  }
+  document.getElementById('buscar').addEventListener('input', filtrar);
+  document.getElementById('cerrarCapa').onclick = cerrarBuscador;
+
+  // ── grilla
+  const grilla = document.getElementById('grilla');
+  grilla.appendChild(Object.assign(document.createElement('div'), { className: 'cab' }));
+  DIAS.forEach(d => grilla.appendChild(Object.assign(document.createElement('div'), { className: 'cab', textContent: d })));
+  const celdas = [];
+  for (let i = 0; i < BLOQUES; i++) {
+    const min = INICIO + i * 30;
+    grilla.appendChild(Object.assign(document.createElement('div'), { className: 'hora' + (min % 60 ? ' media' : ''), textContent: hhmm(min) }));
+    for (let d = 0; d < 6; d++) {
+      const c = document.createElement('div');
+      c.className = 'c' + (min % 60 ? '' : ' hora-entera');
+      c.dataset.k = idx(d, i);
+      grilla.appendChild(c);
+      celdas[idx(d, i)] = c;
+    }
+  }
+  function pintarCelda(k) { celdas[k].style.background = g[k] ? color(g[k]) : ''; }
+  function pintar() {
+    let n = 0;
+    for (let k = 0; k < 192; k++) { pintarCelda(k); if (g[k]) n++; }
+    document.getElementById('total').textContent = n ? `${n / 2} h ocupadas por semana` : 'Sin horas cargadas';
+  }
+
+  let modo = null;   // valor que se pone al arrastrar (escuela activa o 0 para borrar)
+  function celdaEn(x, y) { const el = document.elementFromPoint(x, y); return el && el.classList.contains('c') ? el : null; }
+  function aplicar(el) { if (!el) return; const k = +el.dataset.k; if (g[k] !== modo) { g[k] = modo; pintarCelda(k); } }
+  grilla.addEventListener('pointerdown', e => {
+    const el = celdaEn(e.clientX, e.clientY);
+    if (!el) return;
+    if (!escuelas.length && activa !== 9) { abrirBuscador(); return; }
+    modo = g[+el.dataset.k] === activa ? 0 : activa;
+    aplicar(el);
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+  });
+  grilla.addEventListener('pointermove', e => { if (modo !== null) aplicar(celdaEn(e.clientX, e.clientY)); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t =>
+    grilla.addEventListener(t, () => { if (modo !== null) { modo = null; pintar(); dibujarChips(); } }));
+
+  document.getElementById('borrar').onclick = () => {
+    if (!confirm('¿Borrar todas las horas pintadas? Las escuelas quedan en la lista.')) return;
+    g.fill(0); pintar(); dibujarChips();
+  };
+
+  function guardar() {
+    const datos = JSON.stringify({ tipo: 'horarios2', e: escuelas, g: g.join(''),
+      h: document.getElementById('casa').value.trim().slice(0, 120) });
+    if (tg && tg.initData !== undefined && tg.sendData) tg.sendData(datos);   // cierra la mini app
+    else alert('Abrí esta página desde el botón 🗓️ Mis horarios del bot.\n\n' + datos);
+  }
+
+  cargar();
+  if (!escuelas.length && !g.includes(9)) activa = 1; else if (!escuelas.length) activa = 9;
+  dibujarChips(); pintar();
+  fetch('escuelas.json').then(r => r.json()).then(x => { catalogo = x; }).catch(() => {});
+
+  if (tg && tg.platform && tg.platform !== 'unknown') {
+    tg.ready();
+    tg.expand();
+    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+    tg.MainButton.setText('💾 Guardar mis horarios');
+    tg.MainButton.onClick(guardar);
+    tg.MainButton.show();
+  } else {
+    const b = document.getElementById('guardarWeb');
+    b.style.display = 'block';
+    b.onclick = guardar;
+  }
+</script>
+</body>
+</html>
