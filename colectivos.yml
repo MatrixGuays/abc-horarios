@@ -1,0 +1,33 @@
+name: Actualizar recorridos de colectivos
+
+# Una vez por semana baja los recorridos de OpenStreetMap y actualiza test/colectivos.json,
+# que usa la ventana "Colectivos". También se puede correr a mano desde Actions.
+on:
+  schedule:
+    - cron: "17 9 * * 1"        # lunes 06:17 (hora argentina)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  armar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Armar el archivo de recorridos
+        run: python armar_colectivos.py test/colectivos.json
+      - name: Guardar si cambió
+        run: |
+          git config user.name "abc-bot"
+          git config user.email "abc-bot@users.noreply.github.com"
+          git add test/colectivos.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git commit -m "Recorridos de colectivos actualizados"
+            git push
+          fi
