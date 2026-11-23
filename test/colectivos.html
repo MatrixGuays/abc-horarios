@@ -155,6 +155,121 @@ if (IGE !== null) {
   });
 }
 
+// ── Modo "agregar" (22/11): startapp=a<dato> (10 caracteres de escuela + por día 9 dígitos: día, HHMM, HHMM).
+// Muestra tu semana con la escuela nueva, avisa si se superpone y guarda al instante en el Apps Script.
+const MA = /^a([0-9A-Z]{10}(?:\d{9}){1,6})$/.exec(MODO);
+const DATO_AG = MA ? MA[1] : null;
+const COLORES_ESC = ["#3a7bd5", "#c7792b", "#2e9e6a", "#9b59b6", "#d64545", "#1aa3a3", "#b8860b", "#e0559a"];
+const TIPO_ESC = { JI: "Jardín", EP: "Primaria", PP: "Primaria", MS: "Secundaria", MT: "Técnica", EE: "Especial",
+  MM: "Media", SE: "Superior", DM: "Adultos", CF: "Form. Profesional", EA: "Artística", AA: "Adultos", IS: "Superior" };
+const DIAS_C = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+function leerDatoAg(dato) {
+  const cod = dato.slice(0, 10), m = /^\d{4}([A-Z]{2})(\d+)$/.exec(cod);
+  const fr = [];
+  for (let k = 10; k + 9 <= dato.length; k += 9) {
+    const d = +dato[k] - 1, a = dato.substr(k + 1, 4), b = dato.substr(k + 5, 4);
+    fr.push({ d, ini: +a.slice(0, 2) * 60 + +a.slice(2), fin: +b.slice(0, 2) * 60 + +b.slice(2) });
+  }
+  return { cod, nombre: m ? `${TIPO_ESC[m[1]] || m[1]} N° ${+m[2]}` : cod, fr };
+}
+
+async function pantallaAgregar() {
+  const st = document.createElement("style");
+  st.textContent = `.sem{display:grid;gap:2px;font-size:10.5px;text-align:center;margin-top:8px}
+    .sem .c{height:9px;background:rgba(128,128,128,.16);border-radius:2px}.sem .hr{color:var(--hint);text-align:right;padding-right:3px;line-height:9px}
+    .sem .nw{background:#2e9e6a;box-shadow:0 0 0 1.5px #9fe1cb inset}.sem .ch{background:repeating-linear-gradient(45deg,#d64545 0 3px,#2e9e6a 3px 6px)}
+    .ley{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;font-size:12px;color:var(--hint)}.ley i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+    .warn{background:rgba(240,150,60,.16);border-radius:8px;padding:8px 10px;margin:0 4px 8px;font-size:13px}
+    .bt{display:flex;gap:8px;margin:4px}.bt button{flex:1;border:0;border-radius:10px;padding:12px;font-size:15px;cursor:pointer}
+    .b1{background:var(--btn);color:var(--btntxt);font-weight:600}.b2{background:var(--sec);color:var(--txt)}
+    .okv{text-align:center;padding:28px 10px}.okv .big{font-size:44px}`;
+  document.head.appendChild(st);
+  const app = document.getElementById("app");
+  const x = leerDatoAg(DATO_AG);
+  const lineasNueva = x.fr.map(f => `${DIAS_C[f.d] || "?"} · ${hhmm(f.ini)}–${hhmm(f.fin)}`).join("<br>");
+  app.innerHTML = `<h1>➕ Agregar a Mis horarios</h1><div class="op">🏫 <b>${esc(x.nombre)}</b><br><span class="h">${lineasNueva}</span>`
+    + `<div class="aviso" style="padding:14px 0">Cargando tu semana…</div></div>`;
+  const init = tg && tg.initData;
+  let ag = null;
+  try {
+    if (!init) throw new Error("sin Telegram");
+    ag = await (await fetch(API + "?accion=agenda&init=" + encodeURIComponent(init))).json();
+    if (ag.error) throw new Error(ag.error);
+  } catch (e) {
+    app.innerHTML = `<h1>➕ Agregar a Mis horarios</h1><div class="aviso">No pude leer tus horarios. Cerrá esta ventana y probá de nuevo desde la oferta.</div>`;
+    return;
+  }
+  // índice de la escuela si ya la tenías
+  const yaIdx = ag.e.findIndex(s => s.c === x.cod) + 1;
+  const g = ag.g;
+  const nueva = new Set();
+  x.fr.forEach(f => {
+    const i0 = Math.max(0, Math.floor((f.ini - 420) / 30)), i1 = Math.min(32, Math.ceil((f.fin - 420) / 30));
+    for (let i = i0; i < i1; i++) nueva.add(f.d * 32 + i);
+  });
+  // superposiciones con otras escuelas
+  const choques = {};
+  nueva.forEach(k => {
+    const v = g[k];
+    if (v !== "0" && +v !== yaIdx) {
+      const d = Math.floor(k / 32), i = k % 32, nom = v === "9" ? "otro horario" : ((ag.e[+v - 1] || {}).n || "otra escuela");
+      const clave = nom + "|" + d;
+      (choques[clave] = choques[clave] || { nom, d, a: i, b: i }).b = Math.max(choques[clave].b, i);
+      choques[clave].a = Math.min(choques[clave].a, i);
+    }
+  });
+  const lista = Object.values(choques);
+  // rango de horas a dibujar: lo ocupado + lo nuevo, con un poco de margen
+  let min = 32, max = -1;
+  for (let k = 0; k < 192; k++) if (g[k] !== "0" || nueva.has(k)) { min = Math.min(min, k % 32); max = Math.max(max, k % 32); }
+  min = Math.max(0, min - 1); max = Math.min(31, max + 1);
+  const dias = [0, 1, 2, 3, 4, 5].filter(d => d < 5 || [...Array(32).keys()].some(i => g[d * 32 + i] !== "0" || nueva.has(d * 32 + i)));
+  let sem = `<div class="sem" style="grid-template-columns:30px repeat(${dias.length},1fr)"><span></span>` + dias.map(d => `<b>${DIAS_C[d][0]}</b>`).join("");
+  for (let i = min; i <= max; i++) {
+    sem += `<span class="hr">${i % 2 === 0 ? hhmm(420 + i * 30).slice(0, 2) : ""}</span>`;
+    dias.forEach(d => {
+      const k = d * 32 + i, v = g[k], es = nueva.has(k);
+      if (es && v !== "0" && +v !== yaIdx) sem += `<span class="c ch"></span>`;
+      else if (es) sem += `<span class="c nw"></span>`;
+      else if (v === "9") sem += `<span class="c" style="background:#8a8f98"></span>`;
+      else if (v !== "0") sem += `<span class="c" style="background:${COLORES_ESC[+v - 1] || "#888"}"></span>`;
+      else sem += `<span class="c"></span>`;
+    });
+  }
+  sem += `</div><div class="ley"><span><i style="background:#2e9e6a"></i>Nueva</span>`
+    + ag.e.map((s, k) => k + 1 === yaIdx ? "" : `<span><i style="background:${COLORES_ESC[k]}"></i>${esc(s.n)}</span>`).join("")
+    + (lista.length ? `<span><i style="background:repeating-linear-gradient(45deg,#d64545 0 3px,#2e9e6a 3px 6px)"></i>Se superpone</span>` : "") + `</div>`;
+  const lleno = !yaIdx && ag.e.length >= (ag.max || 8);
+  app.innerHTML = `<h1>➕ Agregar a Mis horarios</h1>`
+    + `<div class="op">🏫 <b>${esc(x.nombre)}</b>${yaIdx ? ` <span class="h">· ya la tenías, se suman estos horarios</span>` : ""}<br><span class="h">${lineasNueva}</span>${sem}</div>`
+    + (lista.length ? `<div class="warn">⚠️ Se superpone con ` + lista.map(c => `<b>${esc(c.nom)}</b> el ${DIAS_C[c.d].toLowerCase()} de ${hhmm(420 + c.a * 30)} a ${hhmm(420 + (c.b + 1) * 30)}`).join("; ") + `.</div>` : "")
+    + (lleno ? `<div class="warn">😕 Ya tenés ${ag.max || 8} escuelas. Quitá alguna en 🗓️ Mis horarios para sumar esta.</div>` : "")
+    + `<p class="pie" style="margin:0 4px 8px;text-align:left">Usalo cuando te asignen el cargo.</p>`
+    + `<div class="bt">${lleno ? "" : `<button class="b1" id="si">✅ ${lista.length ? "Agregar igual" : "Sí, agregar"}</button>`}<button class="b2" id="no">✖️ No</button></div>`;
+  document.getElementById("no").onclick = () => { if (tg && tg.close) tg.close(); };
+  const si = document.getElementById("si");
+  if (si) si.onclick = async () => {
+    si.disabled = true; si.textContent = "Guardando…";
+    try {
+      const r = await (await fetch(API + "?accion=agregar&init=" + encodeURIComponent(init) + "&dato=" + encodeURIComponent(DATO_AG))).json();
+      if (!r.ok) throw new Error(r.error || "error");
+      app.innerHTML = `<div class="okv"><div class="big">✅</div><h1 style="margin:8px 0">¡Listo!</h1>`
+        + `<span class="h">Sumé <b>${esc(r.nombre || x.nombre)}</b> a Mis horarios<br>${lineasNueva}</span></div>`
+        + `<p class="pie">Las ofertas que choquen con este horario te van a llegar marcadas.<br>Para cambiarlo, tocá 🗓️ Mis horarios en el chat.</p>`
+        + `<div class="bt"><button class="b1" id="cerrar">Cerrar</button></div>`;
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+      document.getElementById("cerrar").onclick = () => { if (tg && tg.close) tg.close(); };
+    } catch (e) {
+      si.disabled = false; si.textContent = "✅ Probar de nuevo";
+      const w = document.createElement("div"); w.className = "warn";
+      w.textContent = e.message === "max" ? "Ya tenés el máximo de escuelas." : "No pude guardar. Probá de nuevo en un momento.";
+      app.appendChild(w);
+    }
+  };
+}
+if (DATO_AG) document.addEventListener("DOMContentLoaded", pantallaAgregar);
+
 // ───────── Utilidades ─────────
 function metros(a, b) {
   const la = (a[0] + b[0]) / 2 * Math.PI / 180;
@@ -407,7 +522,7 @@ async function pedirCasa() {
 }
 
 (async () => {
-  if (IGE !== null) return;          // modo postular: no carga recorridos
+  if (IGE !== null || DATO_AG) return;   // modo postular o agregar: no carga recorridos
   const casa = pedirCasa().then(() => { if (LINEAS.length) pintar(); });
   try {
     const r = await fetch(DATOS, { cache: "default" });
