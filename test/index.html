@@ -428,8 +428,8 @@
     const init = tg && tg.initData;
     const pedirPuntos = q.get('prueba')             // solo para probar en el navegador: ?prueba=<json base64>
       ? Promise.resolve(JSON.parse(desdeB64(q.get('prueba'))))
-      : init ? fetch(API + '?accion=viaje&init=' + encodeURIComponent(init)).then(r => r.json())
-             : Promise.resolve({ error: 'fuera de Telegram' });
+      : (init || q.get('u')) ? fetch(API + '?accion=viaje&init=' + encodeURIComponent(init || '') + '&u=' + encodeURIComponent(q.get('u') || '')).then(r => r.json())
+             : Promise.resolve({ error: 'sin firma' });
     Promise.all([fetch('colectivos.json', { cache: 'default' }).then(r => r.json()).then(cargarDatos), pedirPuntos])
       .then(([, p]) => {
         if (p.error) { VJ.estado = 'error'; VJ.error = p.error; }
@@ -530,7 +530,12 @@
     const vv = document.getElementById('vistaViaje');
     if (VJ.estado === 'nada' || VJ.estado === 'cargando') { cargarViaje(); vv.innerHTML = '<div class="card vacio">🚌 Cargando recorridos…</div>'; return; }
     if (VJ.estado === 'error') {
-      vv.innerHTML = `<div class="card vacio">😕 ${VJ.error === 'recorridos' ? 'No pude cargar los recorridos. Probá en un rato.' : 'Abrí Mis horarios desde el botón del bot para ver tu viaje.'}</div>`;
+      const txt = VJ.error === 'recorridos' ? 'No pude cargar los recorridos. Probá en un rato.'
+        : VJ.error === 'sin firma' || VJ.error === 'no autorizado' ? 'Tu botón 🗓️ Mis horarios es viejo. Andá a ✏️ Editar y tocá Guardar una vez: el bot te manda el botón nuevo.'
+        : VJ.error === 'sin cliente' ? 'No te encuentro en la planilla del bot.'
+        : VJ.error === 'clave incorrecta' ? 'Falta publicar la versión nueva del Apps Script (Implementar → Nueva versión).'
+        : 'No pude pedir tus datos al bot.';
+      vv.innerHTML = `<div class="card vacio">😕 ${txt}<br><span class="h">(${esc(VJ.error)})</span></div>`;
       return;
     }
     const hoyD = new Date().getDay() - 1;
