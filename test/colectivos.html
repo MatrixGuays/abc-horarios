@@ -66,19 +66,42 @@ const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const tg = window.Telegram && Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-// ── Modo "postular" (prueba 22/11): el navegador interno de Telegram no termina bien la postulación
-// del ABC ("no estás inscripto"); en Chrome sí. Con startapp=p esta ventana abre el ABC afuera y se cierra.
-const URL_POSTULACION = "https://misaplicaciones5.abc.gob.ar/postulacionAPD/";
+// ── Modo "postular" (22/11): startapp=p<IGE>. El ABC no deja abrir una oferta suelta, así que esta
+// pantalla copia el IGE, abre el ABC por el camino que funciona (inicio de sesión → Actos Públicos)
+// y recuerda los pasos: Ofertas → Buscar en la página → pegar → Postularse.
+const URL_ABC = "https://login.abc.gob.ar/nidp/idff/sso?id=ABC-Form&sid=0&option=credential&target="
+              + encodeURIComponent("https://misservicios.abc.gob.ar/actos.publicos.digitales/");
 const MODO = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
-if (MODO === "p") {
+const IGE = /^p\d*$/.test(MODO) ? MODO.slice(1) : null;
+
+function copiar(texto) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(texto).then(() => true, () => copiarViejo(texto));
+  return Promise.resolve(copiarViejo(texto));
+}
+function copiarViejo(texto) {
+  try {
+    const t = document.createElement("textarea"); t.value = texto; t.style.position = "fixed"; t.style.opacity = "0";
+    document.body.appendChild(t); t.select(); const ok = document.execCommand("copy"); t.remove(); return ok;
+  } catch (e) { return false; }
+}
+function abrirABC() { if (tg && tg.openLink) tg.openLink(URL_ABC, { try_browser: "chrome" }); else location.href = URL_ABC; }
+
+if (IGE !== null) {
   document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById("app").innerHTML = '<div class="cargando">📝 Abriendo la postulación en tu navegador…<br><br>'
-      + '<a href="' + URL_POSTULACION + '" id="manual">Si no se abre, tocá acá</a></div>';
-    // try_browser: pide abrir en Chrome (Android, Mini Apps 7.6+); si no está, Telegram usa el navegador por defecto
-    const abrir = () => { if (tg && tg.openLink) tg.openLink(URL_POSTULACION, { try_browser: "chrome" }); else location.href = URL_POSTULACION; };
-    document.getElementById("manual").onclick = e => { e.preventDefault(); abrir(); };
-    abrir();
-    setTimeout(() => { if (tg && tg.close) tg.close(); }, 1500);
+    const app = document.getElementById("app");
+    app.innerHTML = `<h1>📝 Postularme</h1>`
+      + (IGE ? `<div class="op" style="text-align:center"><span class="h">IGE de la oferta</span><br>`
+             + `<b style="font-size:22px;font-family:monospace;letter-spacing:1px">${IGE}</b><br>`
+             + `<span class="sube" id="estado">Copiando…</span></div>` : "")
+      + `<div class="op"><b>Cuando se abra el ABC:</b>`
+      + `<div class="paso"><span class="ic">1️⃣</span><span>Entrá a <b>Ofertas</b></span></div>`
+      + `<div class="paso"><span class="ic">2️⃣</span><span><b>⋮ → Buscar en la página</b> (en la PC, Ctrl+F)</span></div>`
+      + `<div class="paso"><span class="ic">3️⃣</span><span><b>Pegá</b> el IGE y tocá <b>Postularse</b></span></div></div>`
+      + `<button class="tab on" id="ir" style="width:calc(100% - 8px);margin:4px;padding:12px;font-size:15px">📋 Copiar IGE y abrir el ABC</button>`
+      + `<p class="pie">Si el ABC te pide iniciar sesión, usá tu cuenta de docente.</p>`;
+    const estado = ok => { const e = document.getElementById("estado"); if (e) e.textContent = ok ? "✅ Copiado" : "Tocá el botón para copiarlo"; };
+    if (IGE) copiar(IGE).then(estado);           // intento automático (algunos teléfonos piden un toque)
+    document.getElementById("ir").onclick = () => { (IGE ? copiar(IGE) : Promise.resolve(true)).then(ok => { estado(ok); abrirABC(); }); };
   });
 }
 
@@ -334,7 +357,7 @@ async function pedirCasa() {
 }
 
 (async () => {
-  if (MODO === "p") return;          // modo postular: no carga recorridos
+  if (IGE !== null) return;          // modo postular: no carga recorridos
   const casa = pedirCasa().then(() => { if (LINEAS.length) pintar(); });
   try {
     const r = await fetch(DATOS, { cache: "default" });
