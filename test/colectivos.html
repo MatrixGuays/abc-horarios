@@ -74,7 +74,8 @@ if (MODO === "p") {
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("app").innerHTML = '<div class="cargando">📝 Abriendo la postulación en tu navegador…<br><br>'
       + '<a href="' + URL_POSTULACION + '" id="manual">Si no se abre, tocá acá</a></div>';
-    const abrir = () => { if (tg && tg.openLink) tg.openLink(URL_POSTULACION); else location.href = URL_POSTULACION; };
+    // try_browser: pide abrir en Chrome (Android, Mini Apps 7.6+); si no está, Telegram usa el navegador por defecto
+    const abrir = () => { if (tg && tg.openLink) tg.openLink(URL_POSTULACION, { try_browser: "chrome" }); else location.href = URL_POSTULACION; };
     document.getElementById("manual").onclick = e => { e.preventDefault(); abrir(); };
     abrir();
     setTimeout(() => { if (tg && tg.close) tg.close(); }, 1500);
