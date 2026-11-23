@@ -139,6 +139,10 @@
   .comp b { display: block; font-size: 16px; }
   .ahorro { text-align: center; color: var(--hint); font-size: 12.5px; margin: 0 4px 8px; }
   .hr { color: var(--btn); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  .cuenta { text-align: center; }
+  .cuenta .num { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .5px; margin: 2px 0; }
+  .cuenta .num.ok { color: var(--txt); } .cuenta .num.warn { color: #e6a23c; } .cuenta .num.ya { color: #e05555; }
+  .cuenta .barra-sube { margin-top: 7px; }
   .confirmar { display: block; width: calc(100% - 8px); margin: 0 4px 8px; border: 1px solid #1a9e8f; background: none; color: #1a9e8f; border-radius: 10px; padding: 8px; font-size: 13px; }
 </style>
 </head>
@@ -637,6 +641,56 @@
   }
   const EMOJI_ESC = ['🟦', '🟧', '🟩', '🟪', '🟥', '🟫', '🟨', '🩷'];
   function nombreParada(p) { return p.casa ? '🏠' : (p.v === 9 ? '⬜' : EMOJI_ESC[p.v - 1]); }
+
+  // ── Contador en vivo: cuánto falta para salir (si se pasa, salta a la próxima opción o al próximo tramo)
+  let RELOJ = null;
+  function fechaHoy(min) { const f = new Date(); f.setHours(Math.floor(min / 60), min % 60, 0, 0); return f; }
+  function proximaSalida(plan) {
+    const ahora = new Date();
+    for (let k = 0; k < plan.legs.length; k++) {
+      const l = plan.legs[k], v = l.v;
+      if (!v) continue;
+      const nombre = k === 0 ? 'a ' + cortaEsc(l.a.v) : l.a.casa ? 'de vuelta a casa' : 'a ' + cortaEsc(l.a.v);
+      if (v.fuente === 'google') {
+        const cand = [v.elegida].concat(v.ops.filter(o => o !== v.elegida).sort((a, b) => aMin(a.sale) - aMin(b.sale)));
+        const o = cand.find(o => fechaHoy(aMin(o.sale)).getTime() + 2 * 60000 > ahora);   // 2 min de gracia
+        if (o) return { cuando: fechaHoy(aMin(o.sale)), sale: o.sale, llega: o.llega, como: chipsPasos(o), nombre, proximo: o !== v.elegida };
+      } else {
+        const sale = k === 0 ? plan.sali : (l.de.b || 0);
+        if (sale != null && fechaHoy(sale).getTime() + 2 * 60000 > ahora)
+          return { cuando: fechaHoy(sale), sale: hm(sale), llega: hm(sale + v.min), como: lineasLeg(l).split(' ≈')[0], nombre, proximo: false };
+      }
+    }
+    return null;
+  }
+  function htmlCuenta(plan) {
+    const p = proximaSalida(plan);
+    if (!p) return '<div class="card cuenta"><div class="t">HOY</div><b class="libre">Terminaste los viajes de hoy ✅</b></div>';
+    return `<div class="card cuenta" data-cuando="${p.cuando.getTime()}"><div class="t">${p.proximo ? 'SE PASÓ LA MEJOR · PRÓXIMA OPCIÓN EN' : 'TENÉS QUE SALIR EN'}</div>` +
+      `<div class="num ok" id="cuentaNum">–</div>` +
+      `<div class="h">a las ${esc(p.sale)} · ${esc(p.nombre)} · ${p.como} · llegás ${esc(p.llega)}</div>` +
+      '<div class="barra-sube"><div id="cuentaBarra" style="width:100%;background:#3fb96f"></div></div></div>';
+  }
+  function arrancarReloj() {
+    if (RELOJ) clearInterval(RELOJ);
+    const c = document.querySelector('.cuenta[data-cuando]');
+    if (!c) return;
+    const meta = +c.dataset.cuando;
+    const tic = () => {
+      const n = document.getElementById('cuentaNum'), b = document.getElementById('cuentaBarra');
+      if (!n) { clearInterval(RELOJ); return; }
+      const falta = Math.round((meta - Date.now()) / 1000);
+      if (falta < -120) { dibujarViaje(); return; }                    // se pasó: pasa a la próxima
+      if (falta <= 0) { n.textContent = '¡Salí ya!'; n.className = 'num ya'; b.style.width = '0%'; return; }
+      const hh = Math.floor(falta / 3600), mm = Math.floor(falta % 3600 / 60), ss = falta % 60;
+      n.textContent = `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+      n.className = 'num ' + (falta <= 15 * 60 ? 'warn' : 'ok');
+      b.style.width = Math.min(100, falta / 3600 * 100) + '%';
+      b.style.background = falta <= 15 * 60 ? '#e6a23c' : '#3fb96f';
+    };
+    tic(); RELOJ = setInterval(tic, 1000);
+  }
+
   function dibujarViaje() {
     const vv = document.getElementById('vistaViaje');
     if (VJ.estado === 'nada' || VJ.estado === 'cargando') { cargarViaje(); vv.innerHTML = '<div class="card vacio">🚌 Cargando recorridos…</div>'; return; }
@@ -665,8 +719,8 @@
       const varias = plan.paradas.length > 1;
       h += `<div class="card"><div class="t">HOY · ${DIAS_L[hoyD + 1].toUpperCase()} · ` + (varias ? `${plan.legs.length} viajes` :
         `<span style="color:${color(plan.paradas[0].v)}">■</span> ${esc(nomEsc(plan.paradas[0].v))} a las ${hm(plan.paradas[0].a)}`) + '</div>' +
-        `<div class="st"><div><small>Salí</small><b>${plan.sali !== null ? hm(plan.sali) : '–'}</b></div>` +
-        `<div><small>Viaje</small><b>${plan.min ? durTxt(plan.min) : '–'}</b></div>` +
+        htmlCuenta(plan).replace('<div class="card cuenta"', '<div class="cuenta" style="margin-top:6px"') +
+        `<div class="st"><div><small>Viaje</small><b>${plan.min ? durTxt(plan.min) : '–'}</b></div>` +
         `<div><small>${varias ? 'Todo el día' : 'Ida y vuelta'}</small><b>${plata(plan.costo)}</b></div></div>` +
         (plan.faltan ? `<span class="h warn">Sin dato para ${plan.faltan} tramo${plan.faltan > 1 ? 's' : ''}: el total puede ser mayor.</span>` : '') + '</div>';
       h += htmlSube(plan.costo, varias ? 'para todo el día' : 'ida y vuelta');
@@ -701,6 +755,7 @@
         : `<p class="pie">Tiempos y precios aproximados (tarifa SUBE registrada). Recorridos de OpenStreetMap, ${esc(FECHA)}.</p>`;
     }
     vv.innerHTML = h;
+    arrancarReloj();
     vv.querySelectorAll('[data-tramo]').forEach(b => b.onclick = () => { TRAMO = +b.dataset.tramo; dibujarViaje(); });
     vv.querySelectorAll('[data-op]').forEach(b => b.onclick = () => { ELEGIDA[TRAMO] = +b.dataset.op; dibujarViaje(); });
     vv.querySelectorAll('[data-trenes]').forEach(b => b.onclick = () => { if (tg && tg.openLink) tg.openLink(URL_TRENES); else window.open(URL_TRENES, '_blank'); });
@@ -722,7 +777,7 @@
       document.getElementById('vista' + N).classList.toggle('oculto', t !== cual);
     });
     if (cual === 'semana') dibujarSemana();
-    if (cual === 'viaje') leerSube(dibujarViaje);
+    if (cual === 'viaje') leerSube(dibujarViaje); else if (RELOJ) { clearInterval(RELOJ); RELOJ = null; }
     if (tg && tg.MainButton && tg.platform && tg.platform !== 'unknown') { if (cual === 'editar') tg.MainButton.show(); else tg.MainButton.hide(); }
     window.scrollTo(0, 0);
   }
