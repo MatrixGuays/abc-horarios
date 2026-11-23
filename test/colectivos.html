@@ -72,7 +72,10 @@ if (tg) { tg.ready(); tg.expand(); }
 const URL_ABC = "https://login.abc.gob.ar/nidp/idff/sso?id=ABC-Form&sid=0&option=credential&target="
               + encodeURIComponent("https://misservicios.abc.gob.ar/actos.publicos.digitales/");
 const MODO = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
-const IGE = /^p\d*$/.test(MODO) ? MODO.slice(1) : null;
+// p<IGE>_<DISTRITO> (distrito con guiones en vez de espacios y sin "LA"/"EL" adelante, ej. p4432050_MATANZA)
+const MP = /^p(\d*)(?:_([A-Za-z0-9-]+))?$/.exec(MODO);
+const IGE = MP ? MP[1] : null;
+const DISTRITO = MP && MP[2] ? MP[2].replace(/-/g, " ").toUpperCase() : "";
 
 function copiar(texto) {
   if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(texto).then(() => true, () => copiarViejo(texto));
@@ -86,22 +89,69 @@ function copiarViejo(texto) {
 }
 function abrirABC() { if (tg && tg.openLink) tg.openLink(URL_ABC, { try_browser: "chrome" }); else location.href = URL_ABC; }
 
+const PASOS = {
+  tel: [
+    ["🔐", "<b>Iniciá sesión</b> (cuenta de docente)", "Si ya estás logueado, se saltea solo"],
+    ["📂", "Entrá a <b>Ofertas</b>", "Está en el menú de arriba de Acto Público Digital"],
+    ["📍", "DIST", ""],
+    ["🔍", "<b>⋮ → Buscar en la página</b>", "El ⋮ está arriba a la derecha del navegador"],
+    ["📋", "<b>Pegá</b> el IGE", "Mantené apretado el cuadro de búsqueda → Pegar"],
+    ["✅", "Tocá <b>Postularse</b> en la oferta marcada", "Elegí tu listado, aceptá los términos y confirmá"],
+  ],
+  pc: [
+    ["🔐", "<b>Iniciá sesión</b> (cuenta de docente)", "Si ya estás logueado, se saltea solo"],
+    ["📂", "Entrá a <b>Ofertas</b>", "Está en el menú de arriba de Acto Público Digital"],
+    ["📍", "DIST", ""],
+    ["🔍", "Apretá <b>Ctrl + F</b>", "Se abre el buscador del navegador, arriba a la derecha"],
+    ["📋", "<b>Pegá</b> el IGE con <b>Ctrl + V</b>", "La oferta se marca y la página baja hasta ella"],
+    ["✅", "Hacé clic en <b>Postularse</b>", "Elegí tu listado, aceptá los términos y confirmá"],
+  ],
+};
+
+function htmlPasos(tipo) {
+  const dist = DISTRITO
+    ? `<b>Filtrá el distrito</b>: en <b>Distrito</b> escribí <span class="ige-dist">${esc(DISTRITO)}</span>, elegilo y tocá <b>FILTRAR</b>`
+    : `<b>Filtrá el distrito</b>: en <b>Distrito</b> escribí el tuyo, elegilo y tocá <b>FILTRAR</b>`;
+  return PASOS[tipo].map(([ic, txt, ayuda]) => {
+    const esDist = txt === "DIST";
+    return `<label class="ck${esDist ? " hl" : ""}"><input type="checkbox"><span>${ic} ${esDist ? dist : txt}`
+      + (esDist ? `<br><span class="h">Sin "La". Si no filtrás, la oferta puede estar en otra página y no la encontrás</span>`
+                : (ayuda ? `<br><span class="h">${ayuda}</span>` : "")) + `</span></label>`;
+  }).join("");
+}
+
 if (IGE !== null) {
   document.addEventListener("DOMContentLoaded", () => {
+    const st = document.createElement("style");
+    st.textContent = `.ck{display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(128,128,128,.18);cursor:pointer}
+      .ck:last-child{border:0}.ck input{width:18px;height:18px;margin:1px 0 0;accent-color:#2e9e6a;flex:0 0 18px}
+      .ck input:checked+span{opacity:.55}.hl{background:rgba(58,123,213,.14);border-radius:8px;margin:2px -6px;padding:8px 6px}
+      .ige-dist{font-family:monospace;font-weight:700;background:var(--bg);border-radius:5px;padding:1px 6px;letter-spacing:.5px}
+      .tip{background:rgba(242,201,76,.16);border-radius:8px;padding:8px 10px;margin:8px 4px 0;font-size:13px}
+      .warn{background:rgba(240,150,60,.16);border-radius:8px;padding:8px 10px;margin:8px 4px 0;font-size:13px}`;
+    document.head.appendChild(st);
+    const esTel = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+    let tipo = esTel ? "tel" : "pc", ESTADO_TXT = "Copiando…";
     const app = document.getElementById("app");
-    app.innerHTML = `<h1>📝 Postularme</h1>`
-      + (IGE ? `<div class="op" style="text-align:center"><span class="h">IGE de la oferta</span><br>`
-             + `<b style="font-size:22px;font-family:monospace;letter-spacing:1px">${IGE}</b><br>`
-             + `<span class="sube" id="estado">Copiando…</span></div>` : "")
-      + `<div class="op"><b>Cuando se abra el ABC:</b>`
-      + `<div class="paso"><span class="ic">1️⃣</span><span>Entrá a <b>Ofertas</b></span></div>`
-      + `<div class="paso"><span class="ic">2️⃣</span><span><b>⋮ → Buscar en la página</b> (en la PC, Ctrl+F)</span></div>`
-      + `<div class="paso"><span class="ic">3️⃣</span><span><b>Pegá</b> el IGE y tocá <b>Postularse</b></span></div></div>`
-      + `<button class="tab on" id="ir" style="width:calc(100% - 8px);margin:4px;padding:12px;font-size:15px">📋 Copiar IGE y abrir el ABC</button>`
-      + `<p class="pie">Si el ABC te pide iniciar sesión, usá tu cuenta de docente.</p>`;
-    const estado = ok => { const e = document.getElementById("estado"); if (e) e.textContent = ok ? "✅ Copiado" : "Tocá el botón para copiarlo"; };
-    if (IGE) copiar(IGE).then(estado);           // intento automático (algunos teléfonos piden un toque)
-    document.getElementById("ir").onclick = () => { (IGE ? copiar(IGE) : Promise.resolve(true)).then(ok => { estado(ok); abrirABC(); }); };
+    const pintarPostular = () => {
+      app.innerHTML = `<h1>📝 Postularme</h1>`
+        + (IGE ? `<div class="op" style="text-align:center"><span class="h">IGE de la oferta</span><br>`
+               + `<b style="font-size:22px;font-family:monospace;letter-spacing:1px">${IGE}</b><br>`
+               + `<span class="sube" id="estado">${ESTADO_TXT}</span></div>` : "")
+        + `<div class="op"><b>En el ABC</b>`
+        + `<div class="fila" style="margin:8px 0 4px"><button class="tab${tipo === "tel" ? " on" : ""}" data-t="tel">📱 Teléfono</button>`
+        + `<button class="tab${tipo === "pc" ? " on" : ""}" data-t="pc">💻 PC</button></div>`
+        + htmlPasos(tipo) + `</div>`
+        + `<div class="tip">💡 La oferta queda <b>marcada en amarillo</b>: tocá <b>Postularse</b> justo debajo.</div>`
+        + `<div class="warn">⚠️ Si dice <b>"No se encuentra inscripto"</b>, cerrá sesión y entrá con tu cuenta de docente.</div>`
+        + `<button class="tab on" id="ir" style="width:calc(100% - 8px);margin:10px 4px 4px;padding:12px;font-size:15px">📋 Copiar IGE y abrir el ABC</button>`;
+      app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { tipo = b.dataset.t; pintarPostular(); });
+      document.getElementById("ir").onclick = () => { (IGE ? copiar(IGE) : Promise.resolve(true)).then(ok => { estado(ok); abrirABC(); }); };
+    };
+    const estado = ok => { ESTADO_TXT = ok ? "✅ Copiado" : "Tocá el botón de abajo para copiarlo";
+                           const e = document.getElementById("estado"); if (e) e.textContent = ESTADO_TXT; };
+    pintarPostular();
+    if (IGE) copiar(IGE).then(estado);
   });
 }
 
