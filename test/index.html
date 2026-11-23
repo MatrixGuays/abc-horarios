@@ -457,16 +457,18 @@
   }
 
   // saldo anotado: en la nube de Telegram de cada uno (no va a la planilla)
+  function subeFirma() { const q = new URLSearchParams(location.search); return (tg && tg.initData ? 'init=' + encodeURIComponent(tg.initData) : '') + '&u=' + encodeURIComponent(q.get('u') || ''); }
   function leerSube(listo) {
-    const usar = v => { try { SUBE = v ? JSON.parse(v) : null; } catch (e) { SUBE = null; } listo(); };
-    if (tg && tg.CloudStorage && tg.platform && tg.platform !== 'unknown') tg.CloudStorage.getItem('sube', (err, v) => usar(err ? null : v));
-    else { let v = null; try { v = localStorage.getItem('sube'); } catch (e) {} usar(v); }
+    const q = new URLSearchParams(location.search);
+    if (q.get('prueba_sube')) { SUBE = JSON.parse(desdeB64(q.get('prueba_sube'))); listo(); return; }
+    if (!(tg && tg.initData) && !q.get('u')) { SUBE = null; listo(); return; }
+    fetch(API + '?accion=sube&' + subeFirma()).then(r => r.json())
+      .then(j => { SUBE = (j && !j.error && !j.vacio) ? j : null; }).catch(() => { SUBE = null; }).then(listo);
   }
   function guardarSube(monto) {
-    SUBE = { m: monto, t: Date.now() };
-    const v = JSON.stringify(SUBE);
-    if (tg && tg.CloudStorage && tg.platform && tg.platform !== 'unknown') tg.CloudStorage.setItem('sube', v);
-    else { try { localStorage.setItem('sube', v); } catch (e) {} }
+    SUBE = { base: monto, estim: monto, dias: 0, fecha: '' };
+    fetch(API + '?accion=sube&set=' + monto + '&' + subeFirma()).then(r => r.json())
+      .then(j => { if (j && !j.error) { SUBE = j; dibujarViaje(); } }).catch(() => {});
   }
   function cuando(t) {
     const f = new Date(t), hoy = new Date(), ayer = new Date(Date.now() - 864e5);
@@ -626,14 +628,17 @@
     });
     return h + `<div class="paso"><span class="ic">🚶</span><span>${Math.round(o.pies[1])} m hasta ${destino}</span></div></div>`;
   }
+  function fechaCorta(f) { const m = String(f || '').match(/^(\d+)-(\d+)-(\d+)/); return m ? m[3] + '/' + m[2] : ''; }
   function htmlSube(gasto, para) {
-    let h = `<div class="card"><div class="t">💳 TU SUBE${SUBE ? ' · anotado ' + cuando(SUBE.t) : ''}</div>`;
+    const estim = SUBE ? SUBE.estim : 0;
+    let h = `<div class="card"><div class="t">💳 TU SUBE${SUBE ? ' · estimado' : ''}</div>`;
     if (SUBE) {
-      const resto = SUBE.m - gasto, ok = resto >= 0;
-      h += `<span class="saldo">${plata(SUBE.m)}</span> ` + (gasto ? (ok ? `<span class="libre">· alcanza ${para} ✅</span>` : `<span class="warn">· te faltan ${plata(-resto)} ⚠️</span>`) : '');
-      if (gasto) h += `<div class="barra-sube"><div style="width:${Math.min(100, Math.round(gasto / Math.max(SUBE.m, 1) * 100))}%;background:${ok ? '#3fb96f' : '#e6a23c'}"></div></div>` +
-        `<span class="h">${ok ? `Gastás ≈ ${plata(gasto)} · te quedan ${plata(resto)}` : 'Cargá antes de viajar (el saldo negativo ayuda, pero es poco)'}</span>`;
-    } else h += `<span class="h">Anotá tu saldo y te digo si te alcanza${gasto ? ' (necesitás ≈ ' + plata(gasto) + ')' : ''}.</span>`;
+      const resto = estim - gasto, ok = resto >= 0;
+      h += `<span class="saldo${ok ? '' : ' warn'}">≈ ${plata(estim)}</span> ` + (gasto ? (ok ? `<span class="libre">· alcanza ${para} ✅</span>` : `<span class="warn">· cargá ⚠️</span>`) : '');
+      if (gasto) h += `<div class="barra-sube"><div style="width:${Math.min(100, Math.round(gasto / Math.max(estim, 1) * 100))}%;background:${ok ? '#3fb96f' : '#e6a23c'}"></div></div>` +
+        `<span class="h">${ok ? `Gastás ≈ ${plata(gasto)} · te quedan ≈ ${plata(resto)}` : 'Cargá antes de viajar (el saldo negativo ayuda, pero es poco)'}</span>`;
+      h += `<div class="h" style="margin-top:4px">Anotaste ${plata(SUBE.base)}${SUBE.fecha ? ' el ' + fechaCorta(SUBE.fecha) : ''}${SUBE.dias ? ' · resté ' + SUBE.dias + ' viaje' + (SUBE.dias > 1 ? 's' : '') : ''}</div>`;
+    } else h += `<span class="h">Anotá tu saldo y te digo si te alcanza${gasto ? ' (necesitás ≈ ' + plata(gasto) + ')' : ''}. También podés escribir <b>/saldo 5800</b> en el chat.</span>`;
     h += ANOTANDO
       ? '<div class="anotar"><input id="montoSube" type="number" inputmode="decimal" placeholder="Ej: 5800"><button id="okSube">Guardar</button></div>'
       : '<div class="fila2"><button class="b2" id="anotarSube">✏️ Anotar saldo</button><button class="b2" id="verSube">🔎 Ver en Mi SUBE</button></div>';
@@ -765,8 +770,8 @@
     const ok = document.getElementById('okSube');
     if (ok) ok.onclick = () => {
       const m = parseFloat(String(document.getElementById('montoSube').value).replace(/\./g, '').replace(',', '.'));
-      if (!isNaN(m) && m > -10000 && m < 100000) guardarSube(Math.round(m));
-      ANOTANDO = false; dibujarViaje();
+      ANOTANDO = false;
+      if (!isNaN(m) && m >= 0 && m < 200000) guardarSube(Math.round(m)); else dibujarViaje();
     };
   }
 
