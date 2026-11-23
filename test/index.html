@@ -127,6 +127,19 @@
   .vacio { text-align: center; padding: 18px 8px; }
   .vacio .gr { font-size: 30px; }
   .pie { color: var(--hint); font-size: 11.5px; text-align: center; margin: 8px 4px 0; }
+  .lnt { display: inline-block; background: #1a9e8f; color: #fff; border-radius: 5px; padding: 0 5px; font-weight: 700; font-size: 12px; margin-right: 2px; }
+  .ln.tren { background: #1a9e8f; }
+  .tl.tren::before { background: #1a9e8f; width: 3px; }
+  .bd { display: inline-block; border-radius: 6px; padding: 1px 7px; font-size: 11.5px; margin: 0 4px 3px 0; }
+  .bd.b { background: rgba(63,185,111,.16); color: #3fb96f; }
+  .bd.r { background: rgba(82,136,193,.18); color: var(--btn); }
+  .comp { display: flex; gap: 6px; margin: 0 4px 6px; }
+  .comp button { flex: 1; border: 0; background: var(--sec); color: var(--txt); border-radius: 10px; padding: 7px 4px; text-align: center; }
+  .comp button.on { box-shadow: 0 0 0 1.5px #1a9e8f; }
+  .comp b { display: block; font-size: 16px; }
+  .ahorro { text-align: center; color: var(--hint); font-size: 12.5px; margin: 0 4px 8px; }
+  .hr { color: var(--btn); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  .confirmar { display: block; width: calc(100% - 8px); margin: 0 4px 8px; border: 1px solid #1a9e8f; background: none; color: #1a9e8f; border-radius: 10px; padding: 8px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -467,6 +480,101 @@
     if (!r.ops.length) return null;
     return { min: minutos(r.ops[0]), costo: costo(r.ops[0]), pie: null, ops: r.ops };
   }
+
+  // ── Google (transporte público): tramos del día con horarios; OSM queda de respaldo
+  const TREN_TARIFAS = [[12, 530], [24, 689], [999, 848]];   // SUBE registrada, por sección (aprox., sep/2026)
+  const URL_TRENES = 'https://www.trenesargentinos.gob.ar/';
+  const RUTAS = {};                                           // dia → 'cargando' | { legs } | { error }
+  let ELEGIDA = {};                                           // tramo → índice de opción elegida
+  function pedirRutas(d) {
+    if (RUTAS[d]) return;
+    const q = new URLSearchParams(location.search), init = tg && tg.initData;
+    if (q.get('prueba_rutas')) { RUTAS[d] = JSON.parse(desdeB64(q.get('prueba_rutas'))); return; }
+    if (!init && !q.get('u')) { RUTAS[d] = { error: 'sin firma' }; return; }
+    RUTAS[d] = 'cargando';
+    fetch(API + '?accion=rutas&dia=' + d + '&init=' + encodeURIComponent(init || '') + '&u=' + encodeURIComponent(q.get('u') || ''))
+      .then(r => r.json()).catch(() => ({ error: 'red' }))
+      .then(r => { RUTAS[d] = r; if (!document.getElementById('vistaViaje').classList.contains('oculto')) dibujarViaje(); });
+  }
+  const aMin = t => { const m = String(t || '').match(/^(\d+):(\d+)/); return m ? +m[1] * 60 + +m[2] : null; };
+  function precioTren(km) { for (const [h, p] of TREN_TARIFAS) if (km <= h) return p; return TREN_TARIFAS[2][1]; }
+  function costoG(o) {
+    let n = 0;
+    return o.pasos.reduce((s, p) => {
+      if (p.t === 'pie') return s;
+      const base = p.t === 'tren' ? precioTren(p.km) : (TARIFAS.length ? precio(p.km) : 1100);
+      const f = n === 0 ? 1 : n === 1 ? 0.5 : 0.25; n++;
+      return s + base * f;
+    }, 0);
+  }
+  function legGoogle(g) {
+    if (!g || g.error || !g.ops || !g.ops.length) return null;
+    const ops = g.ops.map(o => Object.assign({ costo: costoG(o), tren: o.pasos.some(p => p.t === 'tren') }, o));
+    const rapida = ops.reduce((a, b) => b.min < a.min ? b : a);
+    const barata = ops.reduce((a, b) => b.costo < a.costo || (b.costo === a.costo && b.min < a.min) ? b : a);
+    const elegida = barata.min <= rapida.min + 20 ? barata : rapida;      // la barata, salvo que tarde mucho más
+    return { fuente: 'google', ops, rapida, barata, elegida, min: elegida.min, costo: elegida.costo, pie: null };
+  }
+  function chipsPasos(o) {
+    return o.pasos.filter(p => p.t !== 'pie').map(p => p.t === 'tren'
+      ? `<span class="lnt">🚆 ${esc(p.l)}</span>` : `<span class="lnv">${esc(p.l)}</span>`).join('');
+  }
+  function linkPunto(pt) {
+    const url = 'https://www.google.com/maps/search/?api=1&query=' + pt.la + ',' + pt.lo;
+    return `<a data-url="${url}">${esc(pt.n)}</a>`;
+  }
+  function htmlOpcionG(o, destino, insignias) {
+    let h = `<div class="opv">${insignias}<div class="cabv"><b>≈ ${o.min} min · ${esc(resumenOp(o))}</b><span class="precio">≈ ${plata(o.costo)}</span></div>`;
+    let n = 0;
+    o.pasos.forEach((p, k) => {
+      if (p.t === 'pie') {
+        const ult = k === o.pasos.length - 1, prim = k === 0;
+        h += `<div class="paso"><span class="ic">🚶</span><span${!prim && !ult ? ' class="h"' : ''}>${p.m} m ${prim ? 'hasta la parada' : ult ? 'hasta ' + destino : 'para combinar'}</span></div>`;
+        return;
+      }
+      const tren = p.t === 'tren';
+      h += `<div class="paso"><span class="ic">${tren ? '🚆' : '🚌'}</span><span style="flex:1"><span class="ln${tren ? ' tren' : ''}">${esc(p.l)}</span> ` +
+        `<span class="h">${p.hacia ? 'hacia ' + esc(p.hacia) : ''}</span>${n ? ` <span class="sube">−${n === 1 ? 50 : 75}% Red SUBE</span>` : ''}` +
+        `<span class="tl${tren ? ' tren' : ''}"><span class="pt s">${linkPunto(p.de)} <span class="hr">${esc(p.de.h)}</span></span>` +
+        `<span class="medio">${p.n ? p.n + (tren ? ' estaciones' : ' paradas') + ' · ' : ''}${fmtKm(p.km)}${tren ? ' · sección ' + (p.km <= 12 ? 1 : p.km <= 24 ? 2 : 3) : ''}</span>` +
+        `<span class="pt b">${linkPunto(p.a)} <span class="hr">${esc(p.a.h)}</span></span></span></span></div>`;
+      n++;
+    });
+    if (!o.pasos.length || o.pasos[o.pasos.length - 1].t !== 'pie') h += `<div class="paso"><span class="ic">🏁</span><span>Llegás ${esc(o.llega)}</span></div>`;
+    return h + '</div>';
+  }
+  function resumenOp(o) {
+    const t = o.pasos.filter(p => p.t !== 'pie');
+    const nb = t.filter(p => p.t === 'bus').length, nt = t.filter(p => p.t === 'tren').length;
+    if (nt && nb) return 'colectivo + tren';
+    if (nt) return nt > 1 ? `${nt} trenes` : 'tren';
+    return nb > 1 ? `${nb} colectivos` : 'directo';
+  }
+  function htmlTramoGoogle(v, k, destino) {
+    const { rapida, barata } = v;
+    let h = '';
+    const misma = rapida === barata;
+    const elegido = ELEGIDA[k] != null ? ELEGIDA[k] : (misma ? 0 : 1);   // 1 = barata, 2 = rápida
+    if (!misma) {
+      const icon = o => o.tren ? '🚆 Con tren' : '🚌 Colectivo';
+      h += '<div class="comp">' +
+        `<button data-op="1" class="${elegido === 1 ? 'on' : ''}"><span class="bd b">💲 Más barata</span><br><small class="h">${icon(barata)}</small><b>${barata.min} min</b><span class="precio">${plata(barata.costo)}</span></button>` +
+        `<button data-op="2" class="${elegido === 2 ? 'on' : ''}"><span class="bd r">⚡ Más rápida</span><br><small class="h">${icon(rapida)}</small><b>${rapida.min} min</b><span class="precio">${plata(rapida.costo)}</span></button></div>`;
+      const ah = rapida.costo - barata.costo, mas = barata.min - rapida.min;
+      if (ah > 0) h += `<div class="ahorro">${barata.tren && !rapida.tren ? 'Con el tren' : 'Con la más barata'} ahorrás ${plata(ah)} por viaje` + (mas > 0 ? ` · ${mas} min más` : '') + '</div>';
+    }
+    const ins = o => (o === barata ? '<span class="bd b">💲 Más barata</span>' : '') + (o === rapida ? '<span class="bd r">⚡ Más rápida</span>' : '');
+    const primero = misma ? barata : (elegido === 2 ? rapida : barata);
+    h += htmlOpcionG(primero, destino, ins(primero));
+    if (primero.tren) h += '<button class="confirmar" data-trenes="1">🚆 Confirmar horario en Trenes Argentinos</button>';
+    const resto = v.ops.filter(o => o !== primero).sort((a, b) => a.min - b.min).slice(0, 2);
+    resto.forEach(o => {
+      h += `<div class="opv">${ins(o)}<div class="cabv"><b>≈ ${o.min} min · ${esc(resumenOp(o))}</b><span class="precio">${plata(o.costo)}</span></div>` +
+        `${chipsPasos(o)} <span class="h">sale ${esc(o.sale)} · llega ${esc(o.llega)}</span></div>`;
+    });
+    return h;
+  }
+
   function planDelDia(d) {
     const paradas = [];
     tramos().filter(x => x.d === d).forEach(x => {
@@ -475,12 +583,14 @@
     });
     if (!paradas.length) return null;
     const puntos = [{ casa: true, pos: VJ.casa }].concat(paradas.map(p => Object.assign({ pos: posDe(p.v) }, p)), [{ casa: true, pos: VJ.casa }]);
+    const G = RUTAS[d] && RUTAS[d].legs && RUTAS[d].legs.length === puntos.length - 1 ? RUTAS[d].legs : null;
     const legs = [];
-    for (let k = 0; k + 1 < puntos.length; k++) legs.push(Object.assign({ de: puntos[k], a: puntos[k + 1] }, { v: tramoViaje(puntos[k].pos, puntos[k + 1].pos) }));
+    for (let k = 0; k + 1 < puntos.length; k++)
+      legs.push({ de: puntos[k], a: puntos[k + 1], v: (G && legGoogle(G[k])) || tramoViaje(puntos[k].pos, puntos[k + 1].pos) });
     const ida = legs[0].v;
-    const sali = ida ? Math.floor((paradas[0].a - ida.min - MARGEN) / 5) * 5 : null;
+    const sali = !ida ? null : ida.fuente === 'google' ? aMin(ida.elegida.sale) : Math.floor((paradas[0].a - ida.min - MARGEN) / 5) * 5;
     const vuelta = legs[legs.length - 1].v;
-    return { paradas, legs, sali, llega: vuelta ? paradas[paradas.length - 1].b + vuelta.min : null,
+    return { paradas, legs, sali, google: !!G, llega: !vuelta ? null : vuelta.fuente === 'google' ? aMin(vuelta.elegida.llega) : paradas[paradas.length - 1].b + vuelta.min,
       min: legs.reduce((s, l) => s + (l.v ? l.v.min : 0), 0), costo: legs.reduce((s, l) => s + (l.v ? l.v.costo : 0), 0),
       faltan: legs.filter(l => !l.v).length };
   }
@@ -488,6 +598,7 @@
   function lineasLeg(l) {
     if (!l.v) return '<span class="warn">sin dato de colectivos</span>';
     if (l.v.pie !== null) return `🚶 a pie · ≈ ${l.v.min} min`;
+    if (l.v.fuente === 'google') { const e = l.v.elegida; return chipsPasos(e) + ` ≈ ${e.min} min · ${plata(e.costo)}`; }
     const o = l.v.ops[0];
     return o.tramos.map(t => `<span class="lnv">${esc(LINEAS[t.li].ref)}</span>`).join('') +
       ` ≈ ${l.v.min} min · ${plata(l.v.costo)}` + (o.tramos.length > 1 ? ' <span class="libre">−50%</span>' : '');
@@ -541,10 +652,12 @@
     const hoyD = new Date().getDay() - 1;
     let h = '';
     if (!VJ.casa) h += '<div class="card">🏠 <b>Falta tu casa.</b><br><span class="h">Escribila en ✏️ Editar y guardá: con eso calculo tus viajes.</span></div>';
+    if (hoyD >= 0 && hoyD < 6) pedirRutas(hoyD);
     const plan = hoyD >= 0 ? planDelDia(hoyD) : null;
     if (!plan) {
       let prox = null, pd = -1;
       for (let k = 1; k <= 7 && !prox; k++) { const d = (hoyD + k + 7) % 7; if (d < 6) { prox = planDelDia(d); pd = d; } }
+      if (prox && !RUTAS[pd]) { pedirRutas(pd); prox = planDelDia(pd); }
       h += '<div class="card vacio"><div class="gr">🛋️</div><b>Hoy no tenés que viajar</b><br>' + (prox
         ? `<span class="h">Próximo viaje: ${DIAS_L[pd + 1]}${prox.sali !== null ? ' ' + hm(prox.sali) : ''} a ${esc(cortaEsc(prox.paradas[0].v))}</span>` : '') + '</div>';
       h += htmlSube(prox ? prox.costo : 0, prox ? 'para el ' + DIAS_L[pd + 1].toLowerCase() : '');
@@ -563,7 +676,11 @@
         const p = l.de;
         if (k === 0) h += `<div class="pto"><span class="ic2">🏠</span><b>Casa</b>${plan.sali !== null ? ` · salí <code>${hm(plan.sali)}</code>` : ''}</div>`;
         else h += `<div class="pto"><span class="ic2">${nombreParada(p)}</span><b>${esc(cortaEsc(p.v))}</b> <code>${hm(p.a)}–${hm(p.b)}</code></div>`;
-        if (k > 0 && !l.a.casa && l.v) { const libre = l.a.a - (p.b + l.v.min); if (libre >= 20) h += `<div class="leg">⏳ hueco de ${durTxt(libre)} · llegás ${hm(p.b + l.v.min)}</div>`; }
+        if (k > 0 && !l.a.casa && l.v) {
+          const llego = l.v.fuente === 'google' ? aMin(l.v.elegida.llega) : p.b + l.v.min, sale = l.v.fuente === 'google' ? aMin(l.v.elegida.sale) : p.b;
+          const libre = l.a.a - llego;
+          if (libre >= 20) h += `<div class="leg">⏳ ${sale - p.b >= 20 ? 'salís ' + hm(sale) + ' · ' : ''}hueco de ${durTxt(libre)} · llegás ${hm(llego)}</div>`;
+        }
         h += `<div class="leg">${lineasLeg(l)}</div>`;
       });
       h += `<div class="pto"><span class="ic2">🏠</span><b>Casa</b>${plan.llega !== null ? ` · ≈ ${hm(plan.llega)}` : ''}</div></div>`;
@@ -576,11 +693,17 @@
       const l = plan.legs[TRAMO], destino = l.a.casa ? 'tu casa' : 'la escuela';
       if (!l.v) h += `<div class="card vacio"><span class="h">${!l.de.pos || !l.a.pos ? 'No tengo la ubicación de ' + (!l.de.pos ? (l.de.casa ? 'tu casa' : 'la escuela') : (l.a.casa ? 'tu casa' : 'la escuela')) + '.' : 'No encontré colectivos que pasen cerca de los dos lugares.'}</span></div>`;
       else if (l.v.pie !== null) h += `<div class="opv"><div class="cabv"><b>🚶 A pie · ≈ ${l.v.min} min</b><span class="precio">$0</span></div><span class="h">Queda a ${Math.round(l.v.pie * 1.3)} m caminando, aprox.</span></div>`;
+      else if (l.v.fuente === 'google') h += htmlTramoGoogle(l.v, TRAMO, destino);
       else h += l.v.ops.slice(0, 2).map(o => htmlOpcionV(o, destino)).join('');
-      h += `<p class="pie">Tiempos y precios aproximados (tarifa SUBE registrada). Recorridos de OpenStreetMap, ${esc(FECHA)}.</p>`;
+      const rh = RUTAS[hoyD];
+      if (rh === 'cargando') h += '<p class="pie">🔄 Buscando horarios de Google Maps…</p>';
+      h += plan.google ? '<p class="pie">Horarios de Google Maps (pueden variar unos minutos). Precios aproximados con SUBE registrada.</p>'
+        : `<p class="pie">Tiempos y precios aproximados (tarifa SUBE registrada). Recorridos de OpenStreetMap, ${esc(FECHA)}.</p>`;
     }
     vv.innerHTML = h;
     vv.querySelectorAll('[data-tramo]').forEach(b => b.onclick = () => { TRAMO = +b.dataset.tramo; dibujarViaje(); });
+    vv.querySelectorAll('[data-op]').forEach(b => b.onclick = () => { ELEGIDA[TRAMO] = +b.dataset.op; dibujarViaje(); });
+    vv.querySelectorAll('[data-trenes]').forEach(b => b.onclick = () => { if (tg && tg.openLink) tg.openLink(URL_TRENES); else window.open(URL_TRENES, '_blank'); });
     vv.querySelectorAll('a[data-url]').forEach(a => a.onclick = () => { if (tg && tg.openLink) tg.openLink(a.dataset.url); else window.open(a.dataset.url, '_blank'); });
     const an = document.getElementById('anotarSube'); if (an) an.onclick = () => { ANOTANDO = true; dibujarViaje(); const i = document.getElementById('montoSube'); if (i) i.focus(); };
     const vs = document.getElementById('verSube'); if (vs) vs.onclick = () => { if (tg && tg.openLink) tg.openLink(URL_MI_SUBE); else window.open(URL_MI_SUBE, '_blank'); };
