@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Mis horarios (prueba)</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="rutas.js"></script>
 <style>
   :root {
     --bg: var(--tg-theme-bg-color, #ffffff);
@@ -83,13 +84,57 @@
   #irEditar { width: calc(100% - 8px); margin: 4px 4px 0; padding: 11px; border: 0; border-radius: 10px;
     background: var(--btn); color: var(--btntxt); font-size: 15px; }
   .oculto { display: none !important; }
+  /* pestaña "🚌 Viaje" (23/11) */
+  .st { display: flex; gap: 6px; margin-top: 6px; text-align: center; }
+  .st div { flex: 1; background: var(--bg); border-radius: 8px; padding: 5px 2px; }
+  .st b { display: block; font-size: 15px; }
+  .st small { color: var(--hint); font-size: 11px; }
+  .saldo { font-size: 18px; font-weight: 600; }
+  .warn { color: #e6a23c; }
+  .barra-sube { height: 7px; background: var(--bg); border-radius: 4px; overflow: hidden; margin: 5px 0; }
+  .barra-sube div { height: 100%; border-radius: 4px; }
+  .fila2 { display: flex; gap: 6px; margin-top: 7px; }
+  .b2 { flex: 1; border: 1px solid var(--btn); background: none; color: var(--btn); border-radius: 8px; padding: 6px; font-size: 13px; }
+  .anotar { display: flex; gap: 6px; margin-top: 7px; }
+  .anotar input { flex: 1; min-width: 0; border: 0; border-radius: 8px; padding: 7px 9px; background: var(--bg); color: var(--txt); font-size: 15px; }
+  .anotar button { border: 0; border-radius: 8px; padding: 7px 12px; background: var(--btn); color: var(--btntxt); }
+  .itin { position: relative; padding-left: 22px; }
+  .itin::before { content: ""; position: absolute; left: 8px; top: 12px; bottom: 12px; width: 2px; background: rgba(128,128,128,.35); }
+  .itin .pto { position: relative; margin: 2px 0; }
+  .itin .pto .ic2 { position: absolute; left: -22px; width: 18px; text-align: center; }
+  .itin .leg { color: var(--hint); font-size: 12.5px; margin: 3px 0 5px; }
+  .lnv { display: inline-block; background: var(--btn); color: var(--btntxt); border-radius: 5px; padding: 0 5px; font-weight: 700; font-size: 12px; margin-right: 2px; }
+  .tramos { display: flex; background: var(--sec); border-radius: 10px; padding: 3px; margin: 0 4px 8px; }
+  .tramos button { flex: 1; border: 0; background: none; color: var(--txt); padding: 7px 2px; border-radius: 8px; font-size: 13px; }
+  .tramos button.on { background: var(--btn); color: var(--btntxt); }
+  .opv { background: var(--sec); border-radius: 12px; padding: 10px 12px; margin: 0 4px 8px; }
+  .opv .cabv { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 8px; }
+  .opv .cabv b { font-size: 15px; }
+  .precio { color: #2e9e6a; font-weight: 600; white-space: nowrap; }
+  .paso { display: flex; gap: 8px; padding: 3px 0; align-items: flex-start; }
+  .paso .ic { width: 20px; text-align: center; flex: 0 0 20px; }
+  .ln { display: inline-block; background: var(--btn); color: var(--btntxt); border-radius: 6px; padding: 0 6px; font-weight: 700; font-size: 13px; margin-right: 2px; }
+  .ln.alt { background: transparent; color: var(--btn); box-shadow: inset 0 0 0 1.5px var(--btn); }
+  .h { color: var(--hint); font-size: 12.5px; }
+  .sube { color: #2e9e6a; font-size: 12.5px; }
+  .tl { display: block; position: relative; padding: 2px 0 2px 20px; margin: 4px 0 2px; }
+  .tl::before { content: ""; position: absolute; left: 5px; top: 10px; bottom: 10px; width: 2px; background: var(--btn); }
+  .tl .pt { position: relative; display: block; }
+  .tl .pt::before { content: ""; position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; }
+  .tl .s::before { background: #2e9e6a; } .tl .b::before { background: #d9534f; }
+  .tl a { color: var(--txt); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .tl .medio { display: block; color: var(--hint); font-size: 12.5px; padding: 1px 0; }
+  .vacio { text-align: center; padding: 18px 8px; }
+  .vacio .gr { font-size: 30px; }
+  .pie { color: var(--hint); font-size: 11.5px; text-align: center; margin: 8px 4px 0; }
 </style>
 </head>
 <body>
   <h1>🗓️ Mis horarios</h1>
-  <div class="tabs"><button id="tabSemana" class="on">📊 Mi semana</button><button id="tabEditar">✏️ Editar</button></div>
+  <div class="tabs"><button id="tabSemana" class="on">📊 Semana</button><button id="tabViaje">🚌 Viaje</button><button id="tabEditar">✏️ Editar</button></div>
 
   <div id="vistaSemana"></div>
+  <div id="vistaViaje" class="oculto"></div>
 
   <div id="vistaEditar">
   <p class="ayuda">Elegí una escuela y pintá las horas en que trabajás ahí. Tocá o arrastrá el dedo.</p>
@@ -369,17 +414,192 @@
     vs.innerHTML = h;
     document.getElementById('irEditar').onclick = () => verTab('editar');
   }
+
+  // ── "🚌 Viaje": el viaje de HOY (casa → escuela(s) → casa) y tu saldo SUBE anotado
+  const API = "https://script.google.com/macros/s/AKfycbxEM5UrAC_qGgYkrEZAusbO0zbZobuYLAQxqOTtpGD_1Nqkg57OJdZER_faflv1Fhtz/exec";
+  const URL_MI_SUBE = "https://tarjetasube.sube.gob.ar/";
+  const MARGEN = 7;                      // minutos de margen antes de entrar
+  let VJ = { estado: 'nada', casa: null, esc: {} }, TRAMO = 0, SUBE = null, ANOTANDO = false;
+
+  function cargarViaje() {
+    if (VJ.estado !== 'nada') return;
+    VJ.estado = 'cargando';
+    const q = new URLSearchParams(location.search);
+    const init = tg && tg.initData;
+    const pedirPuntos = q.get('prueba')             // solo para probar en el navegador: ?prueba=<json base64>
+      ? Promise.resolve(JSON.parse(desdeB64(q.get('prueba'))))
+      : init ? fetch(API + '?accion=viaje&init=' + encodeURIComponent(init)).then(r => r.json())
+             : Promise.resolve({ error: 'fuera de Telegram' });
+    Promise.all([fetch('colectivos.json', { cache: 'default' }).then(r => r.json()).then(cargarDatos), pedirPuntos])
+      .then(([, p]) => {
+        if (p.error) { VJ.estado = 'error'; VJ.error = p.error; }
+        else { VJ.casa = p.casa ? [p.casa.la, p.casa.lo] : null; VJ.esc = p.esc || {}; VJ.estado = 'ok'; }
+      })
+      .catch(() => { VJ.estado = 'error'; VJ.error = 'recorridos'; })
+      .then(() => { if (!document.getElementById('vistaViaje').classList.contains('oculto')) dibujarViaje(); });
+  }
+
+  // saldo anotado: en la nube de Telegram de cada uno (no va a la planilla)
+  function leerSube(listo) {
+    const usar = v => { try { SUBE = v ? JSON.parse(v) : null; } catch (e) { SUBE = null; } listo(); };
+    if (tg && tg.CloudStorage && tg.platform && tg.platform !== 'unknown') tg.CloudStorage.getItem('sube', (err, v) => usar(err ? null : v));
+    else { let v = null; try { v = localStorage.getItem('sube'); } catch (e) {} usar(v); }
+  }
+  function guardarSube(monto) {
+    SUBE = { m: monto, t: Date.now() };
+    const v = JSON.stringify(SUBE);
+    if (tg && tg.CloudStorage && tg.platform && tg.platform !== 'unknown') tg.CloudStorage.setItem('sube', v);
+    else { try { localStorage.setItem('sube', v); } catch (e) {} }
+  }
+  function cuando(t) {
+    const f = new Date(t), hoy = new Date(), ayer = new Date(Date.now() - 864e5);
+    const hora = hm(f.getHours() * 60 + f.getMinutes());
+    if (f.toDateString() === hoy.toDateString()) return 'hoy ' + hora;
+    if (f.toDateString() === ayer.toDateString()) return 'ayer ' + hora;
+    return f.getDate() + '/' + (f.getMonth() + 1) + ' ' + hora;
+  }
+
+  function posDe(v) { const s = escuelas[v - 1]; const p = s && s.c && VJ.esc[s.c]; return p ? [p.la, p.lo] : null; }
+  function tramoViaje(A, B) {             // mejor forma de ir de A a B: { min, costo, pie, ops } o null
+    if (!A || !B) return null;
+    const r = viajeDe(A, B);
+    if (r.pie !== null) return r.pie < 40 ? null : { min: aPie(r.pie), costo: 0, pie: r.pie, ops: [] };
+    if (!r.ops.length) return null;
+    return { min: minutos(r.ops[0]), costo: costo(r.ops[0]), pie: null, ops: r.ops };
+  }
+  function planDelDia(d) {
+    const paradas = [];
+    tramos().filter(x => x.d === d).forEach(x => {
+      const u = paradas[paradas.length - 1];
+      if (u && u.v === x.v) u.b = x.b; else paradas.push({ v: x.v, a: x.a, b: x.b });
+    });
+    if (!paradas.length) return null;
+    const puntos = [{ casa: true, pos: VJ.casa }].concat(paradas.map(p => Object.assign({ pos: posDe(p.v) }, p)), [{ casa: true, pos: VJ.casa }]);
+    const legs = [];
+    for (let k = 0; k + 1 < puntos.length; k++) legs.push(Object.assign({ de: puntos[k], a: puntos[k + 1] }, { v: tramoViaje(puntos[k].pos, puntos[k + 1].pos) }));
+    const ida = legs[0].v;
+    const sali = ida ? Math.floor((paradas[0].a - ida.min - MARGEN) / 5) * 5 : null;
+    const vuelta = legs[legs.length - 1].v;
+    return { paradas, legs, sali, llega: vuelta ? paradas[paradas.length - 1].b + vuelta.min : null,
+      min: legs.reduce((s, l) => s + (l.v ? l.v.min : 0), 0), costo: legs.reduce((s, l) => s + (l.v ? l.v.costo : 0), 0),
+      faltan: legs.filter(l => !l.v).length };
+  }
+  const durTxt = m => m >= 60 ? `${Math.floor(m / 60)} h ${m % 60 ? (m % 60) + ' min' : ''}`.trim() : m + ' min';
+  function lineasLeg(l) {
+    if (!l.v) return '<span class="warn">sin dato de colectivos</span>';
+    if (l.v.pie !== null) return `🚶 a pie · ≈ ${l.v.min} min`;
+    const o = l.v.ops[0];
+    return o.tramos.map(t => `<span class="lnv">${esc(LINEAS[t.li].ref)}</span>`).join('') +
+      ` ≈ ${l.v.min} min · ${plata(l.v.costo)}` + (o.tramos.length > 1 ? ' <span class="libre">−50%</span>' : '');
+  }
+  function htmlOpcionV(o, destino) {
+    const dos = o.tramos.length > 1;
+    let h = `<div class="opv"><div class="cabv"><b>≈ ${minutos(o)} min · ${dos ? '2 colectivos' : 'directo'}</b><span class="precio">≈ ${plata(costo(o))}</span></div>`;
+    o.tramos.forEach((t, n) => {
+      const L = LINEAS[t.li], sube = paradaCerca(L, t.ia), baja = paradaCerca(L, t.ib), np = paradasEntre(L, t.ia, t.ib);
+      if (n === 0) h += `<div class="paso"><span class="ic">🚶</span><span>${Math.round(o.pies[0])} m hasta la parada</span></div>`;
+      else if (o.combina > 60) h += `<div class="paso"><span class="ic">🚶</span><span class="h">${Math.round(o.combina)} m para combinar</span></div>`;
+      let ls = `<span class="ln">${esc(L.ref)}</span>`;
+      if (n === 0) o.alt.forEach(a => ls += `<span class="ln alt">${esc(a)}</span>`);
+      const det = [n === 0 && o.alt.length ? '' : L.ramal, L.hasta ? 'hacia ' + L.hasta : ''].filter(Boolean).map(esc).join(' · ');
+      const medio = [np ? np + ' paradas' : '', fmtKm(t.km)].filter(Boolean).join(' · ');
+      h += `<div class="paso"><span class="ic">🚌</span><span style="flex:1">${ls} <span class="h">${det}</span>` +
+        (n === 1 ? ' <span class="sube">−50% Red SUBE</span>' : '') + '<span class="tl">' +
+        (sube ? `<span class="pt s">${linkParada(L, sube, 'Parada de subida')}</span>` : '') +
+        `<span class="medio">${medio}</span>` +
+        (baja ? `<span class="pt b">${linkParada(L, baja, 'Parada de bajada')}</span>` : '') + '</span></span></div>';
+    });
+    return h + `<div class="paso"><span class="ic">🚶</span><span>${Math.round(o.pies[1])} m hasta ${destino}</span></div></div>`;
+  }
+  function htmlSube(gasto, para) {
+    let h = `<div class="card"><div class="t">💳 TU SUBE${SUBE ? ' · anotado ' + cuando(SUBE.t) : ''}</div>`;
+    if (SUBE) {
+      const resto = SUBE.m - gasto, ok = resto >= 0;
+      h += `<span class="saldo">${plata(SUBE.m)}</span> ` + (gasto ? (ok ? `<span class="libre">· alcanza ${para} ✅</span>` : `<span class="warn">· te faltan ${plata(-resto)} ⚠️</span>`) : '');
+      if (gasto) h += `<div class="barra-sube"><div style="width:${Math.min(100, Math.round(gasto / Math.max(SUBE.m, 1) * 100))}%;background:${ok ? '#3fb96f' : '#e6a23c'}"></div></div>` +
+        `<span class="h">${ok ? `Gastás ≈ ${plata(gasto)} · te quedan ${plata(resto)}` : 'Cargá antes de viajar (el saldo negativo ayuda, pero es poco)'}</span>`;
+    } else h += `<span class="h">Anotá tu saldo y te digo si te alcanza${gasto ? ' (necesitás ≈ ' + plata(gasto) + ')' : ''}.</span>`;
+    h += ANOTANDO
+      ? '<div class="anotar"><input id="montoSube" type="number" inputmode="decimal" placeholder="Ej: 5800"><button id="okSube">Guardar</button></div>'
+      : '<div class="fila2"><button class="b2" id="anotarSube">✏️ Anotar saldo</button><button class="b2" id="verSube">🔎 Ver en Mi SUBE</button></div>';
+    return h + '</div>';
+  }
+  const EMOJI_ESC = ['🟦', '🟧', '🟩', '🟪', '🟥', '🟫', '🟨', '🩷'];
+  function nombreParada(p) { return p.casa ? '🏠' : (p.v === 9 ? '⬜' : EMOJI_ESC[p.v - 1]); }
+  function dibujarViaje() {
+    const vv = document.getElementById('vistaViaje');
+    if (VJ.estado === 'nada' || VJ.estado === 'cargando') { cargarViaje(); vv.innerHTML = '<div class="card vacio">🚌 Cargando recorridos…</div>'; return; }
+    if (VJ.estado === 'error') {
+      vv.innerHTML = `<div class="card vacio">😕 ${VJ.error === 'recorridos' ? 'No pude cargar los recorridos. Probá en un rato.' : 'Abrí Mis horarios desde el botón del bot para ver tu viaje.'}</div>`;
+      return;
+    }
+    const hoyD = new Date().getDay() - 1;
+    let h = '';
+    if (!VJ.casa) h += '<div class="card">🏠 <b>Falta tu casa.</b><br><span class="h">Escribila en ✏️ Editar y guardá: con eso calculo tus viajes.</span></div>';
+    const plan = hoyD >= 0 ? planDelDia(hoyD) : null;
+    if (!plan) {
+      let prox = null, pd = -1;
+      for (let k = 1; k <= 7 && !prox; k++) { const d = (hoyD + k + 7) % 7; if (d < 6) { prox = planDelDia(d); pd = d; } }
+      h += '<div class="card vacio"><div class="gr">🛋️</div><b>Hoy no tenés que viajar</b><br>' + (prox
+        ? `<span class="h">Próximo viaje: ${DIAS_L[pd + 1]}${prox.sali !== null ? ' ' + hm(prox.sali) : ''} a ${esc(cortaEsc(prox.paradas[0].v))}</span>` : '') + '</div>';
+      h += htmlSube(prox ? prox.costo : 0, prox ? 'para el ' + DIAS_L[pd + 1].toLowerCase() : '');
+    } else {
+      const varias = plan.paradas.length > 1;
+      h += `<div class="card"><div class="t">HOY · ${DIAS_L[hoyD + 1].toUpperCase()} · ` + (varias ? `${plan.legs.length} viajes` :
+        `<span style="color:${color(plan.paradas[0].v)}">■</span> ${esc(nomEsc(plan.paradas[0].v))} a las ${hm(plan.paradas[0].a)}`) + '</div>' +
+        `<div class="st"><div><small>Salí</small><b>${plan.sali !== null ? hm(plan.sali) : '–'}</b></div>` +
+        `<div><small>Viaje</small><b>${plan.min ? durTxt(plan.min) : '–'}</b></div>` +
+        `<div><small>${varias ? 'Todo el día' : 'Ida y vuelta'}</small><b>${plata(plan.costo)}</b></div></div>` +
+        (plan.faltan ? `<span class="h warn">Sin dato para ${plan.faltan} tramo${plan.faltan > 1 ? 's' : ''}: el total puede ser mayor.</span>` : '') + '</div>';
+      h += htmlSube(plan.costo, varias ? 'para todo el día' : 'ida y vuelta');
+      // itinerario
+      h += '<div class="card itin">';
+      plan.legs.forEach((l, k) => {
+        const p = l.de;
+        if (k === 0) h += `<div class="pto"><span class="ic2">🏠</span><b>Casa</b>${plan.sali !== null ? ` · salí <code>${hm(plan.sali)}</code>` : ''}</div>`;
+        else h += `<div class="pto"><span class="ic2">${nombreParada(p)}</span><b>${esc(cortaEsc(p.v))}</b> <code>${hm(p.a)}–${hm(p.b)}</code></div>`;
+        if (k > 0 && !l.a.casa && l.v) { const libre = l.a.a - (p.b + l.v.min); if (libre >= 20) h += `<div class="leg">⏳ hueco de ${durTxt(libre)} · llegás ${hm(p.b + l.v.min)}</div>`; }
+        h += `<div class="leg">${lineasLeg(l)}</div>`;
+      });
+      h += `<div class="pto"><span class="ic2">🏠</span><b>Casa</b>${plan.llega !== null ? ` · ≈ ${hm(plan.llega)}` : ''}</div></div>`;
+      // pestañas de tramos
+      if (TRAMO >= plan.legs.length) TRAMO = 0;
+      h += '<div class="tramos">' + plan.legs.map((l, k) => {
+        const txt = k === 0 ? `🏠 → ${nombreParada(l.a)} Ida` : l.a.casa ? `${nombreParada(l.de)} → 🏠 Vuelta` : `${nombreParada(l.de)} → ${nombreParada(l.a)}`;
+        return `<button data-tramo="${k}" class="${k === TRAMO ? 'on' : ''}">${txt}</button>`;
+      }).join('') + '</div>';
+      const l = plan.legs[TRAMO], destino = l.a.casa ? 'tu casa' : 'la escuela';
+      if (!l.v) h += `<div class="card vacio"><span class="h">${!l.de.pos || !l.a.pos ? 'No tengo la ubicación de ' + (!l.de.pos ? (l.de.casa ? 'tu casa' : 'la escuela') : (l.a.casa ? 'tu casa' : 'la escuela')) + '.' : 'No encontré colectivos que pasen cerca de los dos lugares.'}</span></div>`;
+      else if (l.v.pie !== null) h += `<div class="opv"><div class="cabv"><b>🚶 A pie · ≈ ${l.v.min} min</b><span class="precio">$0</span></div><span class="h">Queda a ${Math.round(l.v.pie * 1.3)} m caminando, aprox.</span></div>`;
+      else h += l.v.ops.slice(0, 2).map(o => htmlOpcionV(o, destino)).join('');
+      h += `<p class="pie">Tiempos y precios aproximados (tarifa SUBE registrada). Recorridos de OpenStreetMap, ${esc(FECHA)}.</p>`;
+    }
+    vv.innerHTML = h;
+    vv.querySelectorAll('[data-tramo]').forEach(b => b.onclick = () => { TRAMO = +b.dataset.tramo; dibujarViaje(); });
+    vv.querySelectorAll('a[data-url]').forEach(a => a.onclick = () => { if (tg && tg.openLink) tg.openLink(a.dataset.url); else window.open(a.dataset.url, '_blank'); });
+    const an = document.getElementById('anotarSube'); if (an) an.onclick = () => { ANOTANDO = true; dibujarViaje(); const i = document.getElementById('montoSube'); if (i) i.focus(); };
+    const vs = document.getElementById('verSube'); if (vs) vs.onclick = () => { if (tg && tg.openLink) tg.openLink(URL_MI_SUBE); else window.open(URL_MI_SUBE, '_blank'); };
+    const ok = document.getElementById('okSube');
+    if (ok) ok.onclick = () => {
+      const m = parseFloat(String(document.getElementById('montoSube').value).replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(m) && m > -10000 && m < 100000) guardarSube(Math.round(m));
+      ANOTANDO = false; dibujarViaje();
+    };
+  }
+
   function verTab(cual) {
-    const sem = cual === 'semana';
-    document.getElementById('tabSemana').classList.toggle('on', sem);
-    document.getElementById('tabEditar').classList.toggle('on', !sem);
-    document.getElementById('vistaSemana').classList.toggle('oculto', !sem);
-    document.getElementById('vistaEditar').classList.toggle('oculto', sem);
-    if (sem) dibujarSemana();
-    if (tg && tg.MainButton && tg.platform && tg.platform !== 'unknown') { if (sem) tg.MainButton.hide(); else tg.MainButton.show(); }
+    ['semana', 'viaje', 'editar'].forEach(t => {
+      const N = t.charAt(0).toUpperCase() + t.slice(1);
+      document.getElementById('tab' + N).classList.toggle('on', t === cual);
+      document.getElementById('vista' + N).classList.toggle('oculto', t !== cual);
+    });
+    if (cual === 'semana') dibujarSemana();
+    if (cual === 'viaje') leerSube(dibujarViaje);
+    if (tg && tg.MainButton && tg.platform && tg.platform !== 'unknown') { if (cual === 'editar') tg.MainButton.show(); else tg.MainButton.hide(); }
     window.scrollTo(0, 0);
   }
   document.getElementById('tabSemana').onclick = () => verTab('semana');
+  document.getElementById('tabViaje').onclick = () => verTab('viaje');
   document.getElementById('tabEditar').onclick = () => verTab('editar');
 
   function guardar() {
