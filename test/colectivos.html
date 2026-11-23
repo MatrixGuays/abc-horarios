@@ -66,6 +66,21 @@ const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const tg = window.Telegram && Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
+// ── Modo "postular" (prueba 22/11): el navegador interno de Telegram no termina bien la postulación
+// del ABC ("no estás inscripto"); en Chrome sí. Con startapp=p esta ventana abre el ABC afuera y se cierra.
+const URL_POSTULACION = "https://misaplicaciones5.abc.gob.ar/postulacionAPD/";
+const MODO = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
+if (MODO === "p") {
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("app").innerHTML = '<div class="cargando">📝 Abriendo la postulación en tu navegador…<br><br>'
+      + '<a href="' + URL_POSTULACION + '" id="manual">Si no se abre, tocá acá</a></div>';
+    const abrir = () => { if (tg && tg.openLink) tg.openLink(URL_POSTULACION); else location.href = URL_POSTULACION; };
+    document.getElementById("manual").onclick = e => { e.preventDefault(); abrir(); };
+    abrir();
+    setTimeout(() => { if (tg && tg.close) tg.close(); }, 1500);
+  });
+}
+
 // ───────── Utilidades ─────────
 function metros(a, b) {
   const la = (a[0] + b[0]) / 2 * Math.PI / 180;
@@ -318,6 +333,7 @@ async function pedirCasa() {
 }
 
 (async () => {
+  if (MODO === "p") return;          // modo postular: no carga recorridos
   const casa = pedirCasa().then(() => { if (LINEAS.length) pintar(); });
   try {
     const r = await fetch(DATOS, { cache: "default" });
