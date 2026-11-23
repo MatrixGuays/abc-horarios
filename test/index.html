@@ -52,10 +52,46 @@
   .op { padding: 10px 6px; border-bottom: 1px solid var(--sec); cursor: pointer; }
   .op small { color: var(--hint); display: block; }
   .op.otra { color: var(--btn); }
+  /* pestañas y "Mi semana" (23/11) */
+  .tabs { display: flex; background: var(--sec); border-radius: 10px; padding: 3px; margin: 4px 4px 10px; }
+  .tabs button { flex: 1; border: 0; background: none; color: var(--txt); padding: 7px; border-radius: 8px; font-size: 14px; }
+  .tabs button.on { background: var(--btn); color: var(--btntxt); }
+  .card { background: var(--sec); border-radius: 10px; padding: 8px 10px; margin: 0 4px 10px; }
+  .card .t { color: var(--hint); font-size: 11px; letter-spacing: .4px; }
+  .libre { color: #3fb96f; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--btn); font-size: 13px; }
+  .chica { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin: 0 4px 10px; text-align: center; }
+  .chica > div { background: var(--sec); border-radius: 8px; padding: 4px 2px; }
+  .chica .hoy, .col.hoy { box-shadow: 0 0 0 1.5px var(--btn); }
+  .chica .bar { height: 30px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 3px; }
+  .chica .bar i { display: block; height: 7px; border-radius: 2px; }
+  .chica small, .ejes small { color: var(--hint); font-size: 11px; }
+  .sem { display: grid; grid-template-columns: 52px repeat(6, 1fr); gap: 3px; margin: 0 4px; }
+  .sem .cabd { text-align: center; font-size: 12px; color: var(--hint); }
+  .sem .cabd.hoy { color: var(--btn); font-weight: 600; }
+  .ejes, .col { position: relative; }
+  .ejes small { position: absolute; right: 3px; white-space: nowrap; transform: translateY(-50%); }
+  .col { background: var(--sec); border-radius: 6px; overflow: hidden; }
+  .col .ln { position: absolute; left: 0; right: 0; border-top: 1px solid rgba(128,128,128,.18); }
+  .col .ln.p { border-top: 1px dashed rgba(128,128,128,.4); }
+  .col .bl { position: absolute; left: 2px; right: 2px; border-radius: 4px; color: #fff; font-size: 10px; line-height: 1.15;
+    text-align: center; overflow: hidden; padding-top: 1px; }
+  .col .vl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    writing-mode: vertical-rl; color: #3fb96f; font-size: 12px; }
+  .ley { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 4px 10px; font-size: 12px; }
+  .ley i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  #irEditar { width: calc(100% - 8px); margin: 4px 4px 0; padding: 11px; border: 0; border-radius: 10px;
+    background: var(--btn); color: var(--btntxt); font-size: 15px; }
+  .oculto { display: none !important; }
 </style>
 </head>
 <body>
   <h1>🗓️ Mis horarios</h1>
+  <div class="tabs"><button id="tabSemana" class="on">📊 Mi semana</button><button id="tabEditar">✏️ Editar</button></div>
+
+  <div id="vistaSemana"></div>
+
+  <div id="vistaEditar">
   <p class="ayuda">Elegí una escuela y pintá las horas en que trabajás ahí. Tocá o arrastrá el dedo.</p>
 
   <h2>1 · Escuela</h2>
@@ -72,6 +108,7 @@
   <p class="ayuda" style="margin-top:6px">Se usa para calcular cuánto tardás desde tu casa. Queda guardada solo en la planilla del bot.</p>
 
   <button id="guardarWeb">Guardar</button>
+  </div>
 
   <div id="capa">
     <div class="top"><input id="buscar" placeholder="Número o nombre (ej: secundaria 34)" autocomplete="off"><button class="cerrar" id="cerrarCapa">Cerrar</button></div>
@@ -245,6 +282,106 @@
     g.fill(0); pintar(); dibujarChips();
   };
 
+
+  // ── "📊 Mi semana": pantallazo rápido de la semana (solo mirar; para cambiar, ✏️ Editar)
+  const DIAS_L = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const hm = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  const coma = n => String(n).replace('.', ',');
+  function nomEsc(v) { return v === 9 ? 'Sin escuela' : String((escuelas[v - 1] || {}).n || '').split(' · ')[0]; }
+  function numEsc(v) { const n = nomEsc(v); return v === 9 ? '•' : ((n.match(/\d+/) || [n.slice(0, 4)])[0]); }
+  function cortaEsc(v) { return nomEsc(v).replace(/^Secundaria\b/, 'Sec').replace(' N° ', ' '); }
+  function tramos() {
+    const t = [];
+    for (let d = 0; d < 6; d++) {
+      let i = 0;
+      while (i < BLOQUES) {
+        const v = g[idx(d, i)];
+        if (!v) { i++; continue; }
+        let j = i;
+        while (j < BLOQUES && g[idx(d, j)] === v) j++;
+        t.push({ d, v, a: INICIO + i * 30, b: INICIO + j * 30 });
+        i = j;
+      }
+    }
+    return t;
+  }
+  function dibujarSemana() {
+    const t = tramos();
+    const hoyD = new Date().getDay() - 1;          // 0 = lunes … 5 = sábado, -1 = domingo
+    const ahora = new Date().getHours() * 60 + new Date().getMinutes();
+    let h = '';
+    // Hoy
+    const deHoy = t.filter(x => x.d === hoyD);
+    let estado;
+    if (hoyD < 0) estado = '<span class="libre">Domingo libre ✅</span>';
+    else if (!deHoy.length) estado = '<span class="libre">Libre todo el día ✅</span>';
+    else {
+      const prox = deHoy.find(x => x.b > ahora);
+      if (!prox) estado = '<span class="libre">Terminaste por hoy ✅</span>';
+      else if (prox.a > ahora) estado = `<span class="libre">Libre hasta las ${hm(prox.a)}</span>`;
+      else estado = `<span>Ahora en ${esc(cortaEsc(prox.v))} hasta las ${hm(prox.b)}</span>`;
+    }
+    h += `<div class="card"><div class="t">HOY · ${DIAS_L[hoyD + 1].toUpperCase()}</div>` +
+      deHoy.map(x => `<div><span style="color:${color(x.v)}">■</span> <code>${hm(x.a)}–${hm(x.b)}</code> ${esc(nomEsc(x.v))}</div>`).join('') +
+      estado + '</div>';
+    // Semana chica
+    h += '<div class="chica">' + DIAS.map((dn, d) => {
+      const del = t.filter(x => x.d === d);
+      const mod = del.reduce((s, x) => s + (x.b - x.a), 0) / 60;
+      return `<div class="${d === hoyD ? 'hoy' : ''}"><small>${dn}</small><div class="bar">` +
+        (del.length ? del.map(x => `<i style="background:${color(x.v)}"></i>`).join('') : '<span class="libre" style="font-size:11px">libre</span>') +
+        `</div><small>${mod ? coma(mod) + ' mód.' : '–'}</small></div>`;
+    }).join('') + '</div>';
+    // Grilla grande
+    const ini = Math.min(8 * 60, ...t.map(x => Math.floor(x.a / 120) * 120));
+    const fin = Math.max(20 * 60, ...t.map(x => Math.ceil(x.b / 120) * 120));
+    const PX = 0.27, alto = (fin - ini) * PX, y = m => (m - ini) * PX;
+    const icono = m => m === ini ? '☀️ ' : m === 14 * 60 ? '🌤 ' : m === 18 * 60 ? '🌙 ' : '';
+    const marcas = []; for (let m = ini; m <= fin; m += 120) marcas.push(m);
+    h += '<div class="sem"><div></div>' + DIAS.map((dn, d) => `<div class="cabd${d === hoyD ? ' hoy' : ''}">${dn}</div>`).join('');
+    h += `<div class="ejes" style="height:${alto}px">` + marcas.map(m => `<small style="top:${y(m)}px">${icono(m)}${hm(m)}</small>`).join('') + '</div>';
+    for (let d = 0; d < 6; d++) {
+      const del = t.filter(x => x.d === d);
+      h += `<div class="col${d === hoyD ? ' hoy' : ''}" style="height:${alto}px">` +
+        marcas.slice(1, -1).map(m => `<div class="ln${m === 14 * 60 || m === 18 * 60 ? ' p' : ''}" style="top:${y(m)}px"></div>`).join('') +
+        del.map(x => `<div class="bl" style="top:${y(x.a)}px;height:${Math.max(24, (x.b - x.a) * PX)}px;background:${color(x.v)}">${hm(x.a)}<br><b>${esc(numEsc(x.v))}</b></div>`).join('') +
+        (del.length ? '' : '<div class="vl">libre</div>') + '</div>';
+    }
+    h += '</div>';
+    // Leyenda
+    const usadas = [...new Set(t.map(x => x.v))];
+    h += '<div class="ley">' + usadas.map(v => `<span><i style="background:${color(v)}"></i>${esc(cortaEsc(v))}</span>`).join('') +
+      '<span><i style="border:1px dashed #3fb96f"></i>libre</span></div>';
+    // Huecos más largos (en los días que tenés clase, de 7 a 23 h)
+    const huecos = [];
+    for (let d = 0; d < 6; d++) {
+      const del = t.filter(x => x.d === d);
+      if (!del.length) continue;
+      let desde = INICIO;
+      del.forEach(x => { if (x.a - desde >= 60) huecos.push({ d, a: desde, b: x.a }); desde = x.b; });
+      if (INICIO + BLOQUES * 30 - desde >= 60) huecos.push({ d, a: desde, b: INICIO + BLOQUES * 30 });
+    }
+    huecos.sort((p, q) => (q.b - q.a) - (p.b - p.a));
+    if (huecos.length) h += '<div class="card"><div class="t">HUECOS MÁS LARGOS</div>' + huecos.slice(0, 3).map(x =>
+      `<div>🟢 ${DIAS[x.d]} <code>${hm(x.a)}–${hm(x.b)}</code> · ${coma((x.b - x.a) / 60)} h</div>`).join('') + '</div>';
+    h += '<button id="irEditar">✏️ Editar mis horarios</button>';
+    const vs = document.getElementById('vistaSemana');
+    vs.innerHTML = h;
+    document.getElementById('irEditar').onclick = () => verTab('editar');
+  }
+  function verTab(cual) {
+    const sem = cual === 'semana';
+    document.getElementById('tabSemana').classList.toggle('on', sem);
+    document.getElementById('tabEditar').classList.toggle('on', !sem);
+    document.getElementById('vistaSemana').classList.toggle('oculto', !sem);
+    document.getElementById('vistaEditar').classList.toggle('oculto', sem);
+    if (sem) dibujarSemana();
+    if (tg && tg.MainButton && tg.platform && tg.platform !== 'unknown') { if (sem) tg.MainButton.hide(); else tg.MainButton.show(); }
+    window.scrollTo(0, 0);
+  }
+  document.getElementById('tabSemana').onclick = () => verTab('semana');
+  document.getElementById('tabEditar').onclick = () => verTab('editar');
+
   function guardar() {
     const datos = JSON.stringify({ tipo: 'horarios2', e: escuelas, g: g.join(''),
       h: document.getElementById('casa').value.trim().slice(0, 120) });
@@ -269,6 +406,8 @@
     b.style.display = 'block';
     b.onclick = guardar;
   }
+  // Si ya tiene horarios arranca en "Mi semana"; si está vacío, directo a cargar
+  verTab(g.some(v => v) ? 'semana' : 'editar');
 </script>
 </body>
 </html>
