@@ -1,6 +1,6 @@
 name: Actualizar recorridos de colectivos
 
-# Una vez por semana baja los recorridos de OpenStreetMap y actualiza test/colectivos.json,
+# Una vez por semana baja los recorridos de OpenStreetMap y actualiza colectivos.json (producción) y test/colectivos.json,
 # que usa la ventana "Colectivos". También se puede correr a mano desde Actions.
 on:
   schedule:
@@ -19,12 +19,14 @@ jobs:
         with:
           python-version: "3.12"
       - name: Armar el archivo de recorridos
-        run: python armar_colectivos.py test/colectivos.json
+        run: |
+          python armar_colectivos.py colectivos.json
+          cp colectivos.json test/colectivos.json
       - name: Guardar si cambió
         run: |
           git config user.name "abc-bot"
           git config user.email "abc-bot@users.noreply.github.com"
-          git add test/colectivos.json
+          git add colectivos.json test/colectivos.json
           if git diff --cached --quiet; then
             echo "Sin cambios"
           else
